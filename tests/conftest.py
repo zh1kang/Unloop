@@ -65,6 +65,10 @@ def tiny():
         pad_token_id=0,
         tie_word_embeddings=True,
     )
+    from unloop.model import ATTN, register_attention
+
+    register_attention()
     model = Qwen3_5ForCausalLM(cfg).eval()
+    model.set_attn_implementation(ATTN)  # what `unloop.model.load` uses
     model.generation_config.eos_token_id = 1
     return model, IntTokenizer(64)

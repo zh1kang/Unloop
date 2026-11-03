@@ -84,3 +84,23 @@ def test_weight_edit_and_hooks_on_tiny_model(tiny):
             stack.enter_context(residual_hooks(model, lambda i, h: captured.__setitem__("st", h), at=[2]))
             model(input_ids=ids)
     assert torch.allclose(captured["st"] - captured["plain"], 2.0 * u.expand(1, 5, -1), atol=1e-4)
+
+
+def test_grouped_decode_attention_matches_sdpa_with_repeated_heads():
+    from transformers.integrations.sdpa_attention import sdpa_attention_forward
+
+    from unloop.model import grouped_decode_attention
+
+    torch.manual_seed(0)
+    b, h_kv, groups, t, d = 3, 2, 4, 37, 16
+    module = torch.nn.Module()
+    module.num_key_value_groups, module.is_causal = groups, True
+    q = torch.randn(b, h_kv * groups, 1, d)
+    k, v = torch.randn(b, h_kv, t, d), torch.randn(b, h_kv, t, d)
+    mask = torch.ones(b, 1, 1, t, dtype=torch.bool)
+    mask[0, ..., :5] = False  # left padding
+    mask[2, ..., :11] = False
+    want, _ = sdpa_attention_forward(module, q, k, v, mask, scaling=0.25)
+    got, _ = grouped_decode_attention(module, q, k, v, mask, scaling=0.25)
+    assert got.shape == want.shape == (b, 1, h_kv * groups, d)
+    assert torch.allclose(got, want, atol=1e-6)

@@ -17,13 +17,44 @@ def device() -> str:
     return "mps" if torch.backends.mps.is_available() else "cpu"
 
 
+ATTN = "sdpa_grouped"
+
+
+def grouped_decode_attention(module, query, key, value, attention_mask, dropout=0.0, scaling=None, **kwargs):
+    """transformers' "sdpa" attention, except that one-token steps with a padding mask do not copy key/value heads.
+
+    With a mask, "sdpa" repeats each key/value head for all of its query heads (grouped-query attention), which in
+    batched decoding at 32k tokens copies gigabytes per layer per token. For a single query position, the query
+    heads that share a key/value head can instead be laid out as rows of one query: [B, H, 1, D] -> [B, H_kv, G, D].
+    """
+    from transformers.integrations.sdpa_attention import sdpa_attention_forward
+
+    groups = getattr(module, "num_key_value_groups", 1)
+    if query.shape[2] != 1 or attention_mask is None or groups == 1:
+        return sdpa_attention_forward(module, query, key, value, attention_mask, dropout, scaling, **kwargs)
+    b, h, _, d = query.shape  # query head i uses key/value head i // groups, as in transformers' repeat_kv
+    out = torch.nn.functional.scaled_dot_product_attention(
+        query.reshape(b, h // groups, groups, d), key, value, attn_mask=attention_mask, dropout_p=dropout, scale=scaling
+    )
+    return out.reshape(b, 1, h, d), None  # [B, q_len, H, D], the layout transformers expects
+
+
+def register_attention() -> None:
+    from transformers import AttentionInterface
+    from transformers.masking_utils import AttentionMaskInterface, sdpa_mask
+
+    AttentionInterface.register(ATTN, grouped_decode_attention)
+    AttentionMaskInterface.register(ATTN, sdpa_mask)
+
+
 def load(name: str, dev: str | None = None, dtype: torch.dtype = torch.bfloat16):
     """The text model (Qwen3_5ForCausalLM) and tokenizer of a pinned checkpoint."""
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
+    register_attention()
     repo, rev = MODELS[name]
     tok = AutoTokenizer.from_pretrained(repo, revision=rev)
-    model = AutoModelForCausalLM.from_pretrained(repo, revision=rev, dtype=dtype)
+    model = AutoModelForCausalLM.from_pretrained(repo, revision=rev, dtype=dtype, attn_implementation=ATTN)
     return model.to(dev or device()).eval(), tok
 
 
