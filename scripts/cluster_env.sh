@@ -11,6 +11,9 @@ export TRITON_CACHE_DIR=$C/triton TORCHINDUCTOR_CACHE_DIR=$C/inductor CUDA_CACHE
 export VLLM_CACHE_ROOT=$C/vllm VLLM_CONFIG_ROOT=$C/vllm-config FLASHINFER_WORKSPACE_BASE=$C
 export TMPDIR=$C/tmp
 mkdir -p "$TMPDIR"
+# vLLM's FlashInfer top-k/top-p sampler compiles at first use and needs CUDA headers that compute nodes may lack;
+# the PyTorch sampler samples from the same distribution.
+export VLLM_USE_FLASHINFER_SAMPLER=0
 export VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1 TOKENIZERS_PARALLELISM=false
 unset TRANSFORMERS_CACHE HF_HUB_CACHE HF_DATASETS_CACHE  # these would override HF_HOME
 O=0
