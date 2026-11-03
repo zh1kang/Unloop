@@ -1,5 +1,12 @@
+import sys
+
 import pytest
 import torch
+
+# The tiny model runs on the CPU. When these CUDA/Triton kernel packages are installed (the cluster environment),
+# transformers 5.20 calls them even for CPU tensors and fails; hiding them selects its PyTorch reference code.
+for _kernel_pkg in ("causal_conv1d", "fla"):
+    sys.modules[_kernel_pkg] = None
 
 
 class IntTokenizer:
