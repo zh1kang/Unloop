@@ -16,5 +16,5 @@ cd "$SLURM_SUBMIT_DIR"
 export UNLOOP_OFFLINE=1
 # shellcheck disable=SC1091
 . scripts/cluster_env.sh
-nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
+nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv || echo "no GPU"
 "$@"
