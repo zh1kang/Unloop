@@ -1,0 +1,77 @@
+# Full scale (CUDA cluster): the blog's protocol. Thinking on, temperature 0.6, top-p 0.95, top-k 20,
+# presence penalty 1.5, 32,768 new tokens, 4 samples per MATH-500 problem and 2 per GSM8K problem.
+# One difference: only the held-out problems are evaluated (300 of MATH-500, 1,119 of GSM8K), because the other
+# problems' blog traces are used to find directions. Set split = "all" for numbers comparable to the blog's.
+name = "full"
+backend = "vllm"
+batch_size = 64  # hf backend only
+
+[eval]
+split = "heldout"
+seed = 0
+datasets = { math500 = "all", gsm8k = "all" }
+samples = { math500 = 4, gsm8k = 2 }
+
+[sampling]
+temperature = 0.6
+top_p = 0.95
+top_k = 20
+presence_penalty = 1.5
+max_new_tokens = 32768
+seed = 0
+
+[loop]
+n = 16
+min_len = 256
+tau = 0.9
+
+# ---- question 1: reproduce
+[conditions.base]
+model = "qwen3.5-0.8b"
+
+[conditions.released]
+model = "released"
+
+# ---- question 3a: difference-of-means direction, weight edits
+[conditions.dm_ablate_15_19]  # remove our direction from the MLP outputs of the two layers the released edit uses
+edit = { direction = "diffmean", layers = [15, 19], writers = ["mlp"], alpha = 1.0 }
+
+[conditions.dm_released_form]  # the released edit's exact form (alpha 6, 64 columns), with our direction and columns
+edit = { direction = "diffmean", layers = [15, 19], writers = ["mlp"], alpha = 6.0, top_k = 64 }
+
+[conditions.dm_best]  # the weight edit that `unloop sweep` selects
+edit = "sweep"
+
+[conditions.dm_ablate_all_writers]  # Arditi-style ablation: every attention and MLP writer in all 24 layers
+edit = { direction = "diffmean", layers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], writers = ["mlp", "attn"], alpha = 1.0 }
+
+# ---- question 3c: decoding-time fixes
+[conditions.budget_8k]  # end thinking after 8,192 tokens (Qwen3 budget text); vLLM runs it as a second pass
+decoding = { think_budget = 8192 }
+
+[conditions.budget_16k]
+decoding = { think_budget = 16384 }
+
+[conditions.presence_2]  # the largest presence penalty vLLM accepts
+sampling = { presence_penalty = 2.0 }
+
+# ---- question 4: a larger model of the same family
+[conditions.qwen2b]
+model = "qwen3.5-2b"
+
+# ---- conditions that need forward hooks or a per-step logit bias run with the hf backend;
+# base_hf is their baseline on the same backend.
+[conditions.base_hf]
+backend = "hf"
+
+[conditions.steer_best]  # question 3b: the steering setting that `unloop sweep` selects
+backend = "hf"
+hook = "sweep"
+
+[conditions.think_bias_4]  # +4 on the </think> logit once 8,192 tokens were generated with thinking open
+backend = "hf"
+decoding = { think_bias = 4.0, think_bias_after = 8192 }
+
+[conditions.think_bias_8]
+backend = "hf"
+decoding = { think_bias = 8.0, think_bias_after = 8192 }

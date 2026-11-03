@@ -1,10 +1,12 @@
-# Local pilot (Apple M3 Pro, MPS). Same sampling as the blog except a 4,096-token limit and 1 sample per problem.
+# Local pilot (Apple Silicon, MPS): the conditions of full.toml at a smaller size. Generated from full.toml:
+# 40 held-out problems per benchmark, 1 sample each, 4,096 new tokens, every condition on the hf backend (no base_hf),
+# token thresholds scaled by 4096 / 32768.
 name = "pilot"
 backend = "hf"
 batch_size = 16
 
 [eval]
-split = "heldout"  # problems whose blog traces were not used to find directions
+split = "heldout"
 seed = 0
 datasets = { math500 = 40, gsm8k = 40 }
 samples = { math500 = 1, gsm8k = 1 }
@@ -22,8 +24,49 @@ n = 16
 min_len = 256
 tau = 0.9
 
+# ---- question 1: reproduce
 [conditions.base]
 model = "qwen3.5-0.8b"
 
 [conditions.released]
 model = "released"
+
+# ---- question 3a: difference-of-means direction, weight edits
+[conditions.dm_ablate_15_19]  # remove our direction from the MLP outputs of the two layers the released edit uses
+edit = { direction = "diffmean", layers = [15, 19], writers = ["mlp"], alpha = 1.0 }
+
+[conditions.dm_released_form]  # the released edit's exact form (alpha 6, 64 columns), with our direction and columns
+edit = { direction = "diffmean", layers = [15, 19], writers = ["mlp"], alpha = 6.0, top_k = 64 }
+
+[conditions.dm_best]  # the weight edit that `unloop sweep` selects
+edit = "sweep"
+
+[conditions.dm_ablate_all_writers]  # Arditi-style ablation: every attention and MLP writer in all 24 layers
+edit = { direction = "diffmean", layers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], writers = ["mlp", "attn"], alpha = 1.0 }
+
+# ---- question 3c: decoding-time fixes
+[conditions.budget_1k]  # end thinking after 1,024 tokens (Qwen3 budget text)
+decoding = { think_budget = 1024 }
+
+[conditions.budget_2k]
+decoding = { think_budget = 2048 }
+
+[conditions.presence_2]  # the largest presence penalty vLLM accepts
+sampling = { presence_penalty = 2.0 }
+
+# ---- question 4: a larger model of the same family
+[conditions.qwen2b]
+model = "qwen3.5-2b"
+
+# ---- all pilot conditions use the hf backend, so "base" is the baseline for every row
+[conditions.steer_best]  # question 3b: the steering setting that `unloop sweep` selects
+backend = "hf"
+hook = "sweep"
+
+[conditions.think_bias_4]  # +4 on the </think> logit once 1,024 tokens were generated with thinking open
+backend = "hf"
+decoding = { think_bias = 4.0, think_bias_after = 1024 }
+
+[conditions.think_bias_8]
+backend = "hf"
+decoding = { think_bias = 8.0, think_bias_after = 1024 }
