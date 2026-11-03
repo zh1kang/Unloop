@@ -248,8 +248,12 @@ def cmd_reproduce(args) -> None:
 # ---------------------------------------------------------------- directions
 
 
-def fit_directions(model, traces: list[Trace]) -> tuple[dict, dict]:
-    """Per-layer loop-minus-productive mean differences, per-layer separation, and MLP writer rankings."""
+def fit_directions(model, traces: list[Trace], released: dict | None = None) -> tuple[dict, dict]:
+    """Per-layer loop-minus-productive mean differences, per-layer separation, and MLP writer rankings.
+
+    `released` holds the released edit's directions of the same model ("released.u/.cols.<layer>"); when given,
+    each layer is compared with them and they are returned oriented to point toward loops.
+    """
     from .edits import top_writers, unit
     from .model import writers
 
@@ -257,7 +261,7 @@ def fit_directions(model, traces: list[Trace]) -> tuple[dict, dict]:
     stack = {k: torch.stack([c[k] for c in caps]) for k in caps[0]}  # [traces, layers, d]
     r = stack["loop"].mean(0) - stack["prod"].mean(0)
     dirs, stats = {}, {"n_traces": len(traces), "layers": []}
-    old = load_directions_safe()
+    old = released or {}
     for L in range(r.shape[0]):
         u = unit(r[L])
         proj = (stack["loop"][:, L] - stack["prod"][:, L]) @ u  # per-trace paired projection difference
@@ -302,7 +306,7 @@ def cmd_directions(args) -> None:
     model, tok = load("qwen3.5-0.8b")
     traces = usable(load_traces("qwen3.5-0.8b", tok, LoopRule()), "fit", args.max_len, args.max_traces)
     log(f"fitting on {len(traces)} looping traces")
-    dirs, stats = fit_directions(model, traces)
+    dirs, stats = fit_directions(model, traces, released=load_directions_safe())
     save_directions(dirs)
     stats["trace_ids"] = [t.id for t in traces]
     write_json(RESULTS / "directions.json", stats)

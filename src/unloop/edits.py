@@ -62,7 +62,7 @@ def diff_means(pos: torch.Tensor, neg: torch.Tensor) -> torch.Tensor:
 def top_writers(act_diff: torch.Tensor, W: torch.Tensor, u: torch.Tensor, k: int) -> list[int]:
     """The k MLP neurons whose extra activation in loops writes the most along u: (a_loop - a_prod)_j * u^T W[:, j]."""
     score = act_diff.double() * (unit(u.double()) @ W.double())
-    return sorted(score.topk(k).indices.tolist())
+    return sorted(score.topk(min(k, score.numel())).indices.tolist())
 
 
 def logit_lens(u: torch.Tensor, W_U: torch.Tensor, gain: torch.Tensor) -> torch.Tensor:

@@ -68,6 +68,18 @@ def test_fit_directions_and_conditions_round_trip(tiny, directions_file):
     assert A.next_token_stats(model, traces[0], think) == base
 
 
+def test_fit_directions_compares_only_with_the_given_released_directions(tiny, directions_file):
+    model, _ = tiny
+    traces = [looping_trace(s) for s in range(2)]
+    d = model.config.hidden_size
+    C.save_directions({"released.u.1": torch.ones(2 * d), "released.cols.1": torch.arange(4)})  # another model
+    _, stats = A.fit_directions(model, traces)  # how `unloop origin` calls it: no comparison
+    assert not any(k.startswith("cos_released") for row in stats["layers"] for k in row)
+    released = {"released.u.1": torch.ones(d) / d**0.5, "released.cols.1": torch.arange(4)}
+    dirs, stats = A.fit_directions(model, traces, released=released)
+    assert "cos_released" in stats["layers"][1] and "released.u.1" in dirs
+
+
 def test_select_respects_the_productive_budget():
     spec = lambda k: {"edit": {"layers": [k]}}  # noqa: E731
     results = {
