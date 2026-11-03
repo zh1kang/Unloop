@@ -13,10 +13,9 @@ from contextlib import ExitStack
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from .conditions import apply_condition, resolve
 from .config import DATA, RESULTS, load_run_config
 from .loops import LoopRule
-
-DIRECTIONS = RESULTS / "directions.safetensors"
 
 
 def log(msg: str) -> None:
@@ -41,52 +40,6 @@ def environment() -> dict:
         "machine": platform.machine(),
         "git": commit or None,
     }
-
-
-def load_directions() -> dict:
-    from safetensors.torch import load_file
-
-    return load_file(DIRECTIONS)
-
-
-# ---------------------------------------------------------------- conditions
-
-
-def weight_edits(model, spec: dict, dirs: dict) -> dict:
-    """Edited tensors for an `edit` spec: {direction, layers, writers, alpha, top_k}."""
-    from .edits import project_out
-    from .model import writers
-
-    params = {id(p): n for n, p in model.named_parameters()}
-    out = {}
-    for layer in spec["layers"]:
-        u = dirs[f"{spec['direction']}.u.{layer}"]
-        cols = dirs[f"{spec['direction']}.cols.{layer}"][: spec["top_k"]] if spec.get("top_k") else None
-        for kind in spec.get("writers", ["mlp"]):
-            W = writers(model, layer)[kind].weight
-            out[params[id(W)]] = project_out(W.detach().float().cpu(), u, spec.get("alpha", 1.0), cols)
-    return out
-
-
-def apply_condition(model, cond: dict, stack: ExitStack) -> None:
-    """Weight edits and forward hooks of a condition; hooks are removed when `stack` closes."""
-    from .model import ablate, apply_weight_edits, residual_hooks, steer
-
-    if "edit" not in cond and "hook" not in cond:
-        return
-    dirs = load_directions()
-    if "edit" in cond:
-        apply_weight_edits(model, weight_edits(model, cond["edit"], dirs))
-    if "hook" in cond:
-        h = cond["hook"]
-        layers = h["layers"] if h["layers"] != "all" else list(range(len(model.model.layers)))
-        for layer in layers:
-            if h["kind"] == "steer":  # move by `scale` times the raw loop-minus-productive mean difference
-                r = dirs[f"{h['direction']}.r.{layer}"]
-                fn = steer(r / r.norm(), h["scale"] * float(r.norm()))
-            else:
-                fn = ablate(dirs[f"{h['direction']}.u.{layer}"])
-            stack.enter_context(residual_hooks(model, fn, at=[layer]))
 
 
 def problems_for(cfg: dict):
@@ -157,9 +110,18 @@ def cmd_eval(args) -> None:
     from .model import load
 
     cfg = load_run_config(args.config)
-    cond = cfg["conditions"][args.condition]
+    cond = resolve(cfg["conditions"][args.condition])
     sampling = replace(Sampling(**cfg["sampling"]), **cond.get("sampling", {}))
     decoding = Decoding(**cond.get("decoding", {}))
+    if args.smoke:  # 2 problems per benchmark and 256 tokens, with token thresholds scaled to fit
+        cfg["name"] += "-smoke"
+        cfg["eval"] = cfg["eval"] | {"datasets": dict.fromkeys(cfg["eval"]["datasets"], 2), "samples": {}}
+        sampling = replace(sampling, max_new_tokens=256)
+        decoding = replace(
+            decoding,
+            think_bias_after=min(decoding.think_bias_after, 64),
+            think_budget=decoding.think_budget and min(decoding.think_budget, 128),
+        )
     rule = LoopRule(**cfg.get("loop", {}))
     backend = args.backend or cond.get("backend", cfg.get("backend", "hf"))
     items = list(problems_for(cfg))
@@ -213,18 +175,17 @@ def vllm_checkpoint(cond: dict, name: str) -> str:
     from .config import MODELS
     from .model import load
 
-    if "hook" in cond:
-        raise NotImplementedError("forward hooks need the hf backend")
+    if "hook" in cond or cond.get("decoding", {}).get("think_bias"):
+        raise NotImplementedError("forward hooks and think_bias need the hf backend")
     repo, rev = MODELS[cond.get("model", "qwen3.5-0.8b")]
     if "edit" not in cond:
         return snapshot_download(repo, revision=rev)
-    out = DATA / "checkpoints" / name
-    if not (out / "config.json").exists():
-        model, tok = load(cond.get("model", "qwen3.5-0.8b"), dev="cpu")
-        with ExitStack() as stack:
-            apply_condition(model, cond, stack)
-            model.save_pretrained(out)
-        tok.save_pretrained(out)
+    out = DATA / "checkpoints" / name  # rebuilt every time, so it always matches the current directions
+    model, tok = load(cond.get("model", "qwen3.5-0.8b"), dev="cpu")
+    with ExitStack() as stack:
+        apply_condition(model, cond, stack)
+        model.save_pretrained(out)
+    tok.save_pretrained(out)
     return str(out)
 
 
@@ -232,10 +193,16 @@ def vllm_checkpoint(cond: dict, name: str) -> str:
 
 
 def paired_diff(a: list[dict], b: list[dict], key: str, reps: int = 2000) -> list[float]:
-    """Mean of b - a over matched samples, with a 95% bootstrap interval over problems."""
-    ka = {(r["id"], r["sample"]): r[key] for r in a}
-    pairs = [(float(ka[(r["id"], r["sample"])]), float(r[key])) for r in b if (r["id"], r["sample"]) in ka]
-    diffs = [y - x for x, y in pairs]
+    """Mean over problems of (b - a), each averaged over its samples, with a 95% bootstrap interval over problems."""
+
+    def per_problem(rows):
+        by: dict[str, list[float]] = {}
+        for r in rows:
+            by.setdefault(r["id"], []).append(float(r[key]))
+        return {k: sum(v) / len(v) for k, v in by.items()}
+
+    pa, pb = per_problem(a), per_problem(b)
+    diffs = [pb[k] - pa[k] for k in pb if k in pa]
     rng = random.Random(0)
     boots = sorted(sum(rng.choices(diffs, k=len(diffs))) / len(diffs) for _ in range(reps))
     return [round(sum(diffs) / len(diffs), 4), round(boots[int(0.025 * reps)], 4), round(boots[int(0.975 * reps)], 4)]
@@ -244,7 +211,8 @@ def paired_diff(a: list[dict], b: list[dict], key: str, reps: int = 2000) -> lis
 def cmd_table(args) -> None:
     folder = RESULTS / args.run
     runs = {p.stem: json.loads(p.read_text()) for p in sorted(folder.glob("*.json")) if p.stem != "table"}
-    base = runs.get(args.baseline)
+    # each condition is compared with the baseline run on the same backend ("base" or "base_hf")
+    bases = {runs[n]["backend"]: runs[n] for n in (args.baseline + "_hf", args.baseline) if n in runs}
     datasets = sorted({ds for r in runs.values() for ds in r["metrics"]})
     lines = [
         "| condition | " + " | ".join(f"{ds} acc | {ds} loop | {ds} cut" for ds in datasets) + " |",
@@ -259,7 +227,8 @@ def cmd_table(args) -> None:
                 cells += ["-"] * 3
                 continue
             entry[ds] = dict(m)
-            if base and name != args.baseline:
+            base = bases.get(r["backend"])
+            if base and base is not r:
                 a = [x for x in base["per_sample"] if x["dataset"] == ds]
                 b = [x for x in r["per_sample"] if x["dataset"] == ds]
                 entry[ds]["d_correct"] = paired_diff(a, b, "correct")
@@ -268,11 +237,11 @@ def cmd_table(args) -> None:
         table[name] = entry
         lines.append(f"| {name} | " + " | ".join(cells) + " |")
     print("\n".join(lines))
-    write_json(folder / "table.json", {"baseline": args.baseline, "rows": table, "markdown": "\n".join(lines)})
+    write_json(folder / "table.json", {"baselines": sorted(bases), "rows": table, "markdown": "\n".join(lines)})
 
 
 def main() -> None:
-    from . import analysis
+    from . import analysis, api
 
     ap = argparse.ArgumentParser(prog="unloop")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -280,12 +249,14 @@ def main() -> None:
     p.add_argument("--config", required=True)
     p.add_argument("--condition", required=True)
     p.add_argument("--backend", choices=["hf", "vllm"])
+    p.add_argument("--smoke", action="store_true", help="2 problems per benchmark, 256 tokens; results in <name>-smoke")
     p.set_defaults(fn=cmd_eval)
     p = sub.add_parser("table", help="results table of a run with paired differences to a baseline")
     p.add_argument("--run", default="pilot")
     p.add_argument("--baseline", default="base")
     p.set_defaults(fn=cmd_table)
     analysis.add_commands(sub)
+    api.add_commands(sub)
     args = ap.parse_args()
     args.fn(args)
 
