@@ -380,7 +380,7 @@ def lens(model, tok, u: torch.Tensor, k: int = 15) -> dict:
     from .model import unembed
 
     W_U, gain = unembed(model)
-    x = logit_lens(u.to(W_U.device), W_U, gain.to(W_U.device)).float().cpu()
+    x = logit_lens(u, W_U.detach().float().cpu(), gain.detach().cpu()).float()  # float64 on CPU; MPS has none
     z = (x - x.mean()) / x.std()
     order = x.argsort()
     special = {t: tok.convert_tokens_to_ids(t) for t in (THINK_END, "<|im_end|>", "<think>")}
