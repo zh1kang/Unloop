@@ -1,0 +1,29 @@
+# Local pilot (Apple M3 Pro, MPS). Same sampling as the blog except a 4,096-token limit and 1 sample per problem.
+name = "pilot"
+backend = "hf"
+batch_size = 16
+
+[eval]
+split = "heldout"  # problems whose blog traces were not used to find directions
+seed = 0
+datasets = { math500 = 40, gsm8k = 40 }
+samples = { math500 = 1, gsm8k = 1 }
+
+[sampling]
+temperature = 0.6
+top_p = 0.95
+top_k = 20
+presence_penalty = 1.5
+max_new_tokens = 4096
+seed = 0
+
+[loop]
+n = 16
+min_len = 256
+tau = 0.9
+
+[conditions.base]
+model = "qwen3.5-0.8b"
+
+[conditions.released]
+model = "released"

@@ -1,0 +1,42 @@
+[project]
+name = "unloop"
+version = "0.1.0"
+description = "Finding, explaining, and replacing the weight edit that stops Qwen3.5-0.8B from looping"
+readme = "README.md"
+authors = [
+    { name = "Caleb", email = "uongcaleb@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "datasets>=4",
+    "huggingface-hub>=2.4.0",
+    "math-verify==0.9.0",
+    "numpy>=2.5.4",
+    "safetensors>=0.8.0",
+    "torch>=2.9",
+    "transformers>=5.20,<6",
+]
+
+[project.scripts]
+unloop = "unloop.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8.22,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008", "B905"]  # frozen dataclass defaults; zip over equal-length lists
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
