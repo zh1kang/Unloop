@@ -3,6 +3,8 @@
 # its own virtual environment instead of the uv.lock environment (torch 2.15, transformers 5.22) used locally.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# shellcheck disable=SC1091
+. scripts/cluster_env.sh  # caches inside the repository
 uv venv .venv-cluster --python 3.12
 # shellcheck disable=SC1091
 . .venv-cluster/bin/activate

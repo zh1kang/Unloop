@@ -240,6 +240,21 @@ def cmd_table(args) -> None:
     write_json(folder / "table.json", {"baselines": sorted(bases), "rows": table, "markdown": "\n".join(lines)})
 
 
+def cmd_fetch(args) -> None:
+    """Download every pinned model, benchmark, and blog trace, so that jobs can run without internet."""
+    from huggingface_hub import snapshot_download
+
+    from .config import BLOG_RUNS, DATASETS, MODELS
+    from .data import blog_traces, load_problems
+
+    for name, (repo, rev) in MODELS.items():
+        log(f"{name}: {snapshot_download(repo, revision=rev)}")
+    for ds in DATASETS:
+        log(f"{ds}: {len(load_problems(ds))} problems")
+        for model in BLOG_RUNS:
+            log(f"blog {model} {ds}: {len(blog_traces(model, ds))} traces")
+
+
 def main() -> None:
     from . import analysis, api
 
@@ -251,6 +266,9 @@ def main() -> None:
     p.add_argument("--backend", choices=["hf", "vllm"])
     p.add_argument("--smoke", action="store_true", help="2 problems per benchmark, 256 tokens; results in <name>-smoke")
     p.set_defaults(fn=cmd_eval)
+    sub.add_parser("fetch", help="download all pinned models and data (run on a node with internet)").set_defaults(
+        fn=cmd_fetch
+    )
     p = sub.add_parser("table", help="results table of a run with paired differences to a baseline")
     p.add_argument("--run", default="pilot")
     p.add_argument("--baseline", default="base")

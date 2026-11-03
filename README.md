@@ -113,22 +113,27 @@ uv run pytest -q
 uv run ruff check .
 ```
 
-**Cluster** (CUDA, Linux).
-vLLM 0.33.0 supports `Qwen3_5ForCausalLM` and `Qwen3_5ForConditionalGeneration`, but it pins torch 2.14.0 and transformers < 5.21, so the cluster uses its own environment:
+**Cluster** (CUDA, Linux, Slurm).
+vLLM 0.33.0 supports `Qwen3_5ForCausalLM` and `Qwen3_5ForConditionalGeneration`, but it pins torch 2.14.0 and transformers < 5.21, so the cluster uses its own environment, `.venv-cluster`.
+`scripts/cluster_env.sh` activates it and keeps every cache (Hugging Face, uv, Triton, vLLM, temporary files) in the repository's `.cache`, so nothing goes to `$HOME`.
+Compute nodes often have no internet, so `unloop fetch` downloads all pinned models and data on a login node first, and jobs run offline.
 
 ```bash
-scripts/setup_cluster.sh            # creates .venv-cluster with vLLM 0.33.0
-source .venv-cluster/bin/activate
-SMOKE=1 scripts/run_all.sh          # analyses at full size (minutes), then every condition at 2 problems and 256 tokens
-scripts/run_all.sh configs/full.toml
+scripts/setup_cluster.sh                       # once, on a login node (needs uv)
+. scripts/cluster_env.sh && unloop fetch       # once, on a login node
+mkdir -p logs
+sbatch --time=02:00:00 scripts/job.sbatch env SMOKE=1 scripts/run_all.sh   # analyses at full size, then every condition at 2 problems and 256 tokens
+scripts/submit_all.sh configs/full.toml        # one analysis job, then one single-GPU job per condition
+unloop table --run full                        # when the jobs finish
 ```
 
-With Slurm, for example: `sbatch --gres=gpu:1 --time=48:00:00 --wrap "source .venv-cluster/bin/activate && scripts/run_all.sh"`.
-To split conditions over GPUs, run the analysis once, then pass conditions: `SKIP_ANALYSIS=1 scripts/run_all.sh configs/full.toml base released`.
+`scripts/submit_all.sh` makes the conditions that use an edit or a hook wait for the analysis job.
+Set `SBATCH_ARGS` for cluster options; on Princeton's Della, for example: `SBATCH_ARGS="--partition=gpu --constraint=gpu80" scripts/submit_all.sh`.
+Without Slurm, `scripts/run_all.sh configs/full.toml` runs everything in sequence on one GPU.
 
 Cost guide: the blog's re-run generated 43.4M tokens in 51 minutes on one H200 with vLLM.
-One condition of `full.toml` is roughly 50-100M tokens, so expect 1-2 hours per vLLM condition.
-The four hf conditions (`base_hf`, `steer_best`, `think_bias_4`, `think_bias_8`) use the Hugging Face decode loop, which is much slower; their speed on CUDA has not been measured, so check the smoke run's `seconds` field first.
+One condition of `full.toml` is roughly 50-100M tokens, so expect 1-2 hours per vLLM condition on an H200 and more on an A100.
+The four hf conditions (`base_hf`, `steer_best`, `think_bias_4`, `think_bias_8`) use the Hugging Face decode loop, which is much slower; check the smoke run's `seconds` field first.
 
 **Local pilot** (Apple Silicon): `configs/pilot.toml` has the same conditions with 40 problems per benchmark, 1 sample, and 4,096 tokens, all on the hf backend (up to about 40 minutes per condition at 134 tokens/s).
 
@@ -177,6 +182,6 @@ src/unloop/
   api.py         hosted-model loop contrast
   cli.py         eval, table, command line
 configs/         full.toml (cluster), pilot.toml (laptop)
-scripts/         setup_cluster.sh, run_all.sh
+scripts/         setup_cluster.sh, cluster_env.sh, Slurm jobs (job.sbatch, submit_all.sh), run_all.sh
 tests/           tests that need no downloaded weights
 ```

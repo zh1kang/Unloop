@@ -4,3 +4,6 @@ __pycache__/
 .ruff_cache/
 data/
 *.egg-info/
+.cache/
+.venv-cluster/
+logs/
