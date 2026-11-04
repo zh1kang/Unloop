@@ -1,7 +1,8 @@
 """Loop detection on token ids.
 
 A token is "repeated" when the n-gram that ends at it already ended at an earlier position.
-A response is looping when some suffix of at least `min_len` tokens is at least `tau` repeated:
+A response is looping when some suffix of at least `min_len` tokens is at least `tau` repeated and contains a
+`min_len`-token window that is itself that repeated:
 the model is stuck in a verbatim (or near-verbatim) cycle at the point where it stopped.
 """
 
@@ -32,14 +33,29 @@ def repeated_mask(tokens: list[int], n: int) -> list[bool]:
 
 
 def loop_onset(tokens: list[int], rule: LoopRule = LoopRule()) -> int | None:
-    """First repeated token of the longest suffix that is at least `tau` repeated, or None if not looping."""
+    """Where the final loop starts, or None if the response is not looping.
+
+    A response is looping when its longest suffix that is at least `tau` repeated has `min_len` tokens or more.
+    Over a long loop, that suffix's 10% slack also takes in thousands of earlier, sparsely repeated tokens, so
+    the onset is the first repeated token of the first `min_len`-token window inside the suffix that is itself
+    at least `tau` repeated: the start of the dense repetition.
+    """
     mask = repeated_mask(tokens, rule.n)
     suffix, best = 0, None
     for s in range(len(tokens) - 1, -1, -1):
         suffix += mask[s]
         if len(tokens) - s >= rule.min_len and suffix >= rule.tau * (len(tokens) - s):
             best = s
-    return None if best is None else mask.index(True, best)
+    if best is None:
+        return None
+    w = rule.min_len
+    run = sum(mask[best : best + w])
+    for s in range(best, len(tokens) - w + 1):
+        if run >= rule.tau * w:
+            return mask.index(True, s)
+        if s + w < len(tokens):
+            run += mask[s + w] - mask[s]
+    return None  # no dense window: sparse repeats only, not a loop
 
 
 def first_stuck(tokens: list[int], rule: LoopRule = LoopRule()) -> int | None:

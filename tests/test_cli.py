@@ -1,4 +1,5 @@
-from unloop.cli import paired_diff, summarize, wilson
+from unloop.cli import paired_diff, rescore_rows, summarize, wilson
+from unloop.loops import LoopRule
 
 
 def rows(correct, loop, ds="gsm8k", samples=1):
@@ -34,3 +35,16 @@ def test_paired_diff_averages_samples_within_problems():
     mean, lo, hi = paired_diff(a, b, "correct")
     assert mean == 0.75 and lo <= mean <= hi  # problem p0: +1, problem p1: +0.5
     assert paired_diff(a, a, "loop") == [0.0, 0.0, 0.0]
+
+
+def test_rescore_rows_recomputes_only_the_loop_fields():
+    rule = LoopRule(n=2, min_len=8, tau=0.9)
+    looping = " ".join(["7"] * 4 + ["1", "2", "3"] * 10)
+    old = [
+        {"text": looping, "loop": False, "loop_onset": None, "correct": True, "n_tokens": 34},
+        {"text": "1 2 3 4 5 6 7 8 9 10", "loop": True, "loop_onset": 0, "correct": False, "n_tokens": 10},
+    ]
+    new = rescore_rows(old, lambda text: [int(t) for t in text.split()], rule)
+    assert [r["loop"] for r in new] == [True, False] and new[1]["loop_onset"] is None
+    assert 4 <= new[0]["loop_onset"] <= 4 + 3 + rule.n
+    assert [r["correct"] for r in new] == [True, False] and old[0]["loop"] is False  # input left unchanged

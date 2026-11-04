@@ -50,3 +50,14 @@ def test_first_stuck_is_the_first_fully_repeated_window():
     assert pos is not None
     assert sum(mask[pos - RULE.stop_window : pos]) >= RULE.stop_tau * RULE.stop_window
     assert sum(mask[pos - 1 - RULE.stop_window : pos - 1]) < RULE.stop_tau * RULE.stop_window
+
+
+def test_onset_of_a_long_loop_is_where_the_dense_repetition_starts():
+    # Sparse repeats before the loop (a phrase every 28 tokens, about 18% repeated) must not pull the onset back:
+    # over a long loop, the 10% slack of the suffix rule covers hundreds of such tokens.
+    phrase = fresh(8, 11)
+    descent = [t for i in range(30) for t in fresh(20, 100 + i) + phrase]
+    start = 200 + len(descent)
+    tokens = fresh(200, 12) + descent + fresh(13, 13) * 200
+    onset = loop_onset(tokens, RULE)
+    assert onset is not None and start <= onset <= start + 13 + RULE.n

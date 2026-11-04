@@ -189,6 +189,51 @@ def vllm_checkpoint(cond: dict, name: str) -> str:
     return str(out)
 
 
+# ---------------------------------------------------------------- rescore
+
+
+def rescore_rows(rows: list[dict], encode, rule: LoopRule) -> list[dict]:
+    """Copies of saved generation rows with `loop` and `loop_onset` recomputed from their text."""
+    from .loops import loop_onset
+
+    out = []
+    for r in rows:
+        onset = loop_onset(encode(r["text"]), rule)
+        out.append(r | {"loop": onset is not None, "loop_onset": onset})
+    return out
+
+
+def cmd_rescore(args) -> None:
+    """Recompute the loop fields of every condition of a run from its saved texts, after a loop-rule change.
+
+    The texts are encoded again; the decode-encode round trip can differ from the sampled ids in rare tokens.
+    """
+    from transformers import AutoTokenizer
+
+    from .config import MODELS
+
+    for path in sorted((RESULTS / args.run).glob("*.json")):
+        if path.stem == "table":
+            continue
+        res = json.loads(path.read_text())
+        repo, rev = MODELS[res["spec"].get("model", "qwen3.5-0.8b")]
+        tok = AutoTokenizer.from_pretrained(repo, revision=rev)
+        saved = DATA / "runs" / args.run / f"{path.stem}.jsonl"
+        rows = [json.loads(line) for line in saved.open()]
+        if len(rows) != len(res["per_sample"]):
+            raise ValueError(f"{saved}: {len(rows)} rows, but {path} has {len(res['per_sample'])}")
+        encode = lambda t, tok=tok: tok(t, add_special_tokens=False).input_ids  # noqa: E731
+        new = rescore_rows(rows, encode, LoopRule(**res["loop_rule"]))
+        flips = sum(a["loop"] != b["loop"] for a, b in zip(rows, new))
+        with open(saved, "w") as f:
+            f.writelines(json.dumps(r) + "\n" for r in new)
+        res["metrics"] = summarize(new)
+        res["per_sample"] = [{k: v for k, v in r.items() if k != "text"} for r in new]
+        res["rescored"] = {"git": environment()["git"], "loop_flips": flips}
+        write_json(path, res)
+        log(f"{path.stem}: {flips} loop labels changed")
+
+
 # ---------------------------------------------------------------- table
 
 
@@ -273,6 +318,9 @@ def main() -> None:
     p.add_argument("--run", default="pilot")
     p.add_argument("--baseline", default="base")
     p.set_defaults(fn=cmd_table)
+    p = sub.add_parser("rescore", help="recompute loop labels of a run's saved generations with the current rule")
+    p.add_argument("--run", required=True)
+    p.set_defaults(fn=cmd_rescore)
     analysis.add_commands(sub)
     api.add_commands(sub)
     args = ap.parse_args()

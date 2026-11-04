@@ -61,7 +61,9 @@ The full protocol for one condition is about 100M generated tokens, so the gener
 
 **Loop detector** (`loops.py`).
 A token is repeated when the 16-gram that ends at it occurred earlier in the response.
-A response is looping when some suffix of at least 256 tokens is at least 90% repeated; the loop onset is the first repeated token of the longest such suffix.
+A response is looping when some suffix of at least 256 tokens is at least 90% repeated.
+The loop onset is the start of the dense repetition: the first repeated token of the first 256-token window inside the longest such suffix that is itself at least 90% repeated.
+(The first repeated token of the suffix itself is a median of about 3,200 tokens too early, because over a long loop the suffix's 10% slack takes in sparsely repeated text before the loop; `unloop rescore` recomputes the labels of saved generations.)
 The detector does not depend on the token limit, so it also works on short runs.
 
 **Grading** (`grading.py`).
