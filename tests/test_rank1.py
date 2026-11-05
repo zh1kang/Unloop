@@ -10,7 +10,6 @@ from unloop.loops import LoopRule
 from unloop.model import writers
 from unloop.rank1 import (
     Rank1Write,
-    _backward_equal,
     branch_summary,
     clean_crop,
     continuation_outcome,
@@ -49,17 +48,6 @@ def test_holding_a_token_costs_more_when_that_token_is_likely():
     low = torch.log(torch.tensor([[0.05, 0.50, 0.45]]))
     assert escape_pair_loss(high, targets, mask, hold_id=0) > escape_pair_loss(low, targets, mask, hold_id=0)
     assert torch.allclose(escape_pair_loss(high, targets, mask), escape_pair_loss(low, targets, mask))
-
-
-def test_equal_backward_keeps_the_smaller_term():
-    class Box(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.w = torch.nn.Parameter(torch.zeros(2))
-
-    box = Box()
-    _backward_equal(box, [1000 * box.w[0], box.w[1]])
-    assert torch.allclose(box.w.grad.abs(), torch.tensor([0.5, 0.5]))
 
 
 def test_pair_crop_labels_productive_tokens_keep_and_repeated_loop_tokens_break():

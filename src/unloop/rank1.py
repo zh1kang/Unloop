@@ -10,8 +10,9 @@ with u a unit vector in the residual stream and v a gain per neuron. u starts as
 difference-of-means direction and v starts near zero, so the fit can leave that family. The loss
 on each looping fit trace is a pair: next-token loss on the productive window before the loop,
 and unlikelihood of the repeated tokens through the next 1,024 tokens of the loop. With
-`--hold-think`, that loop stretch also pays the log-probability of `</think>`, so ending the
-trace is not how the repeat dies. The same next-token loss on finished, non-looping fit traces
+`--hold-think`, that same stretch also pays unlikelihood on `</think>`. The penalty is negligible
+while the token is rare and pushes back if the fit starts to emit it, which is the cheap way to
+make the repeated token unlikely. The same next-token loss on finished, non-looping fit traces
 is the control that ordinary text stays likely. Nothing is trained on the released weights.
 
 The measurement is the branch-point restart, not this loss. `unloop branch` continues the same
@@ -43,8 +44,7 @@ def escape_pair_loss(
     """Mean next-token loss on keep positions plus mean unlikelihood on break positions.
 
     Unlikelihood is -log(1 - p) of the token that continues a repeated n-gram (Welleck et al.).
-    `hold_id` adds the mean log-probability of that token on break positions, which is higher
-    when the token is likely.
+    `hold_id` adds the same unlikelihood for that token on break positions.
     """
     return sum(loss_parts(log_probs, targets, break_mask, hold_id).values())
 
@@ -61,7 +61,8 @@ def loss_parts(
         p = lp[break_mask].exp().clamp(max=1 - 1e-4)
         parts["break"] = (-torch.log(1 - p)).mean()
         if hold_id is not None:
-            parts["hold"] = log_probs[break_mask, hold_id].mean()
+            held = log_probs[break_mask, hold_id].exp().clamp(max=1 - 1e-4)
+            parts["hold"] = (-torch.log(1 - held)).mean()
     if not parts:
         raise ValueError("crop has no scored positions")
     return parts
@@ -193,43 +194,16 @@ def logp_at(model, crop: dict) -> torch.Tensor:
 
 
 def sequence_loss(model, crop: dict, hold_id: int | None = None) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    """One forward. The scalar sums the part means; the dict keeps each part for a backward of its own."""
+    """One forward. The scalar sums the loss terms. `hold_logp` is recorded and is not part of the scalar."""
     dev = next(model.parameters()).device
     targets = torch.tensor(crop["targets"], device=dev)
     mask = torch.tensor(crop["break"], device=dev)
-    parts = loss_parts(logp_at(model, crop), targets, mask, hold_id)
-    return sum(parts.values()), parts
-
-
-def _backward_equal(module: nn.Module, terms: list[torch.Tensor]) -> None:
-    """Give each term the same share of the step.
-
-    The repeat unlikelihood starts with a huge gradient, and a plain sum then a global clip spends
-    the whole step on it. </think> is rare at the start, so its penalty would otherwise vanish.
-    """
-    params = [p for p in module.parameters() if p.requires_grad]
-    acc = {id(p): torch.zeros_like(p) for p in params}
-    live = [t for t in terms if t.requires_grad]
-    for i, term in enumerate(live):
-        module.zero_grad()
-        term.backward(retain_graph=i < len(live) - 1)
-        square = sum(float(p.grad.detach().float().pow(2).sum()) for p in params if p.grad is not None)
-        if square < 1e-12:
-            continue
-        scale = square**-0.5
-        for p in params:
-            if p.grad is not None:
-                acc[id(p)].add_(p.grad, alpha=scale)
-    for p in params:
-        p.grad = acc[id(p)] / max(len(live), 1)
-
-
-def _unit_grad(module: nn.Module) -> dict[int, torch.Tensor]:
-    """A copy of each parameter's gradient, scaled so the whole vector has length 1."""
-    params = [p for p in module.parameters() if p.requires_grad and p.grad is not None]
-    square = sum(float(p.grad.detach().float().pow(2).sum()) for p in params)
-    scale = 0.0 if square < 1e-12 else square**-0.5
-    return {id(p): p.grad.detach() * scale for p in params}
+    logp = logp_at(model, crop)
+    parts = loss_parts(logp, targets, mask, hold_id)
+    if hold_id is not None and bool(mask.any()):
+        parts["hold_logp"] = logp[mask, hold_id].mean().detach()
+    loss = sum(v for k, v in parts.items() if k != "hold_logp")
+    return loss, parts
 
 
 def fit_rank1(
@@ -265,31 +239,18 @@ def fit_rank1(
             for epoch in range(epochs):
                 totals: dict[str, list[float]] = {}
                 for i, crop in enumerate(loop_crops):
+                    opt.zero_grad()
                     loss, parts = sequence_loss(model, crop, hold_id)
-                    if hold_id is None:
-                        loss.backward()
-                    else:
-                        # A summed backward spends the clipped step on the repeat. Split the step
-                        # so </think> cannot hide inside that term, and match the clean trace's length.
-                        _backward_equal(edit, list(parts.values()))
+                    loss.backward()
                     if epoch == 0 and i == 0:
                         grad = edit.v[str(layers[0])].grad
                         if grad is None or float(grad.abs().sum()) == 0:
                             raise RuntimeError("the rank-1 gains got no gradient; the backward did not reach the edit")
                     stats = {k: float(v.detach()) for k, v in parts.items()}
-                    if hold_id is not None:
-                        acc = _unit_grad(edit)
-                        edit.zero_grad()
                     if clean_crops:
                         clean_loss, clean_parts = sequence_loss(model, clean_crops[i % len(clean_crops)])
                         clean_loss.backward()
                         stats["clean"] = float(clean_parts["keep"].detach())
-                    if hold_id is not None:
-                        clean_grad = _unit_grad(edit)
-                        acc = {k: acc.get(k, 0) + clean_grad.get(k, 0) for k in set(acc) | set(clean_grad)}
-                        for p in edit.parameters():
-                            if p.requires_grad:
-                                p.grad = acc.get(id(p))
                     torch.nn.utils.clip_grad_norm_(edit.parameters(), 1.0)
                     opt.step()
                     for k, v in stats.items():
