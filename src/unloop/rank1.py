@@ -10,10 +10,11 @@ with u a unit vector in the residual stream and v a gain per neuron. u starts as
 difference-of-means direction and v starts near zero, so the fit can leave that family. The loss
 on each looping fit trace is a pair: next-token loss on the productive window before the loop,
 and unlikelihood of the repeated tokens through the next 1,024 tokens of the loop. With
-`--hold-think`, that same stretch also pays unlikelihood on `</think>`. The penalty is negligible
-while the token is rare and pushes back if the fit starts to emit it, which is the cheap way to
-make the repeated token unlikely. The same next-token loss on finished, non-looping fit traces
-is the control that ordinary text stays likely. Nothing is trained on the released weights.
+`--hold-think`, that same stretch also pays unlikelihood on `</think>`, and two percent of each
+step lowers its log-probability. Unlikelihood never fires while the token is rare, which is how
+the repeated token gets replaced by the end of thinking. The same next-token loss on finished,
+non-looping fit traces is the control that ordinary text stays likely. Nothing is trained on the
+released weights.
 
 The measurement is the branch-point restart, not this loss. `unloop branch` continues the same
 32 validation prefixes as the pilot (configs/branch_val.json): 8 samples, 4,096 new tokens, stop
@@ -36,6 +37,9 @@ from .edits import cosine, unit
 from .loops import LoopRule, loop_onset, repeated_mask
 
 CONTEXT, BREAK_LEN, MAX_LEN = 512, 1024, 4096
+# Share of the main gradient spent lowering log p(</think>). An equal share drove that log-probability
+# to about -120 and the pre-loop loss from 0.3 to 12. Unlikelihood alone leaves the edit unchanged.
+HOLD_SHARE = 0.02
 
 
 def escape_pair_loss(
@@ -201,9 +205,29 @@ def sequence_loss(model, crop: dict, hold_id: int | None = None) -> tuple[torch.
     logp = logp_at(model, crop)
     parts = loss_parts(logp, targets, mask, hold_id)
     if hold_id is not None and bool(mask.any()):
-        parts["hold_logp"] = logp[mask, hold_id].mean().detach()
-    loss = sum(v for k, v in parts.items() if k != "hold_logp")
+        raw = logp[mask, hold_id].mean()
+        parts["hold_logp"] = raw.detach()
+        parts["hold_push"] = raw
+    loss = sum(v for k, v in parts.items() if k not in ("hold_logp", "hold_push"))
     return loss, parts
+
+
+def _add_share(module: nn.Module, loss: torch.Tensor, share: float) -> None:
+    """Add `loss`'s gradient scaled to `share` of the gradient already on `module`."""
+    owned = [p for p in module.parameters() if p.requires_grad]
+    main = sum(float(p.grad.detach().float().pow(2).sum()) for p in owned if p.grad is not None) ** 0.5
+    grads = torch.autograd.grad(loss, owned, allow_unused=True)
+    square = sum(float(g.detach().float().pow(2).sum()) for g in grads if g is not None)
+    if main == 0 or square < 1e-12:
+        return
+    scale = share * main / square**0.5
+    for p, g in zip(owned, grads):
+        if g is None:
+            continue
+        if p.grad is None:
+            p.grad = g.detach() * scale
+        else:
+            p.grad.add_(g, alpha=scale)
 
 
 def fit_rank1(
@@ -241,12 +265,14 @@ def fit_rank1(
                 for i, crop in enumerate(loop_crops):
                     opt.zero_grad()
                     loss, parts = sequence_loss(model, crop, hold_id)
-                    loss.backward()
+                    loss.backward(retain_graph="hold_push" in parts)
+                    if "hold_push" in parts:
+                        _add_share(edit, parts["hold_push"], HOLD_SHARE)
                     if epoch == 0 and i == 0:
                         grad = edit.v[str(layers[0])].grad
                         if grad is None or float(grad.abs().sum()) == 0:
                             raise RuntimeError("the rank-1 gains got no gradient; the backward did not reach the edit")
-                    stats = {k: float(v.detach()) for k, v in parts.items()}
+                    stats = {k: float(v.detach()) for k, v in parts.items() if k != "hold_push"}
                     if clean_crops:
                         clean_loss, clean_parts = sequence_loss(model, clean_crops[i % len(clean_crops)])
                         clean_loss.backward()
@@ -346,6 +372,8 @@ def _mean_loss(model, crops: list[dict], hold_id: int | None = None) -> dict:
     for crop in crops:
         _, parts = sequence_loss(model, crop, hold_id)
         for k, v in parts.items():
+            if k == "hold_push":
+                continue
             totals.setdefault(k, []).append(float(v.detach()))
     return {k: round(sum(v) / len(v), 5) for k, v in totals.items()}
 

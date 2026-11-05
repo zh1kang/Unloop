@@ -10,6 +10,7 @@ from unloop.loops import LoopRule
 from unloop.model import writers
 from unloop.rank1 import (
     Rank1Write,
+    _add_share,
     branch_summary,
     clean_crop,
     continuation_outcome,
@@ -48,6 +49,18 @@ def test_holding_a_token_costs_more_when_that_token_is_likely():
     low = torch.log(torch.tensor([[0.05, 0.50, 0.45]]))
     assert escape_pair_loss(high, targets, mask, hold_id=0) > escape_pair_loss(low, targets, mask, hold_id=0)
     assert torch.allclose(escape_pair_loss(high, targets, mask), escape_pair_loss(low, targets, mask))
+
+
+def test_hold_share_is_a_small_slice_of_the_main_step():
+    class Box(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.w = torch.nn.Parameter(torch.zeros(2))
+
+    box = Box()
+    (1000 * box.w[0]).backward()
+    _add_share(box, box.w[1], 0.02)
+    assert torch.allclose(box.w.grad, torch.tensor([1000.0, 20.0]))
 
 
 def test_pair_crop_labels_productive_tokens_keep_and_repeated_loop_tokens_break():
