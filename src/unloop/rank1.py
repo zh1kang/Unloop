@@ -255,6 +255,7 @@ def fit_rank1(
     return edit, history
 
 
+@torch.no_grad()
 def continuation_batch(model, tok, rows: list[tuple[list[int], list[int]]], max_new: int, seed: int) -> list[list[int]]:
     """Continue each (prompt, response prefix). The presence penalty sees the response prefix, and </think> stops."""
     from .generate import Sampling, sample, stop_ids
