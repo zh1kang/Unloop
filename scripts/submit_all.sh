@@ -28,19 +28,21 @@ import sys, tomllib
 from pathlib import Path
 
 cfg = tomllib.load(open(sys.argv[1], "rb"))
-have_rank1 = False
+rank1_keys = set()
 path = Path("results/directions.safetensors")
 if path.exists():
     from safetensors import safe_open
 
     with safe_open(path, framework="pt") as f:
-        have_rank1 = "rank1.u.15" in f.keys()
+        rank1_keys = set(f.keys())
 for name in sys.argv[2:] or cfg["conditions"]:
     spec = cfg["conditions"][name]
     edit = spec.get("edit")
-    if isinstance(edit, dict) and edit.get("direction") == "rank1" and not have_rank1:
-        print(f"skip {name}: run `unloop fit-rank1` before this condition", file=sys.stderr)
-        continue
+    if isinstance(edit, dict) and str(edit.get("direction", "")).startswith("rank1"):
+        layer = edit["layers"][0]
+        if f"{edit['direction']}.u.{layer}" not in rank1_keys:
+            print(f"skip {name}: run `unloop fit-rank1` before this condition", file=sys.stderr)
+            continue
     print(name, spec.get("backend", cfg["backend"]), int("edit" in spec or "hook" in spec))
 EOF
 while read -r cond backend needs_analysis; do

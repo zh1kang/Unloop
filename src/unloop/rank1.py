@@ -9,9 +9,10 @@ choose one. Here the parameters are the edit itself. On two MLP down-projections
 with u a unit vector in the residual stream and v a gain per neuron. u starts as the
 difference-of-means direction and v starts near zero, so the fit can leave that family. The loss
 on each looping fit trace is a pair: next-token loss on the productive window before the loop,
-and unlikelihood of the repeated tokens through the next 1,024 tokens of the loop. The same
-next-token loss on finished, non-looping fit traces is the control that ordinary text stays
-likely. Nothing is trained on the released weights.
+and unlikelihood of the repeated tokens through the next 1,024 tokens of the loop. With
+`--hold-think`, that loop stretch also pays the log-probability of `</think>`, so ending the
+trace is not how the repeat dies. The same next-token loss on finished, non-looping fit traces
+is the control that ordinary text stays likely. Nothing is trained on the released weights.
 
 The measurement is the branch-point restart, not this loss. `unloop branch` continues the same
 32 validation prefixes as the pilot (configs/branch_val.json): 8 samples, 4,096 new tokens, stop
@@ -36,22 +37,34 @@ from .loops import LoopRule, loop_onset, repeated_mask
 CONTEXT, BREAK_LEN, MAX_LEN = 512, 1024, 4096
 
 
-def escape_pair_loss(log_probs: torch.Tensor, targets: torch.Tensor, break_mask: torch.Tensor) -> torch.Tensor:
+def escape_pair_loss(
+    log_probs: torch.Tensor, targets: torch.Tensor, break_mask: torch.Tensor, hold_id: int | None = None
+) -> torch.Tensor:
     """Mean next-token loss on keep positions plus mean unlikelihood on break positions.
 
     Unlikelihood is -log(1 - p) of the token that continues a repeated n-gram (Welleck et al.).
+    `hold_id` adds the mean log-probability of that token on break positions, which is higher
+    when the token is likely.
     """
+    return sum(loss_parts(log_probs, targets, break_mask, hold_id).values())
+
+
+def loss_parts(
+    log_probs: torch.Tensor, targets: torch.Tensor, break_mask: torch.Tensor, hold_id: int | None = None
+) -> dict[str, torch.Tensor]:
     lp = log_probs.gather(1, targets[:, None]).squeeze(1)
-    terms = []
+    parts = {}
     keep = ~break_mask
     if keep.any():
-        terms.append((-lp[keep]).mean())
+        parts["keep"] = (-lp[keep]).mean()
     if break_mask.any():
         p = lp[break_mask].exp().clamp(max=1 - 1e-4)
-        terms.append((-torch.log(1 - p)).mean())
-    if not terms:
+        parts["break"] = (-torch.log(1 - p)).mean()
+        if hold_id is not None:
+            parts["hold"] = log_probs[break_mask, hold_id].mean()
+    if not parts:
         raise ValueError("crop has no scored positions")
-    return sum(terms)
+    return parts
 
 
 def pair_crop(
@@ -179,23 +192,44 @@ def logp_at(model, crop: dict) -> torch.Tensor:
     return logits.float().log_softmax(-1)
 
 
-def sequence_loss(model, crop: dict) -> tuple[torch.Tensor, dict]:
-    """One forward. The scalar is the sum of the keep and break means; stats holds each mean."""
+def sequence_loss(model, crop: dict, hold_id: int | None = None) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """One forward. The scalar sums the part means; the dict keeps each part for a backward of its own."""
     dev = next(model.parameters()).device
     targets = torch.tensor(crop["targets"], device=dev)
     mask = torch.tensor(crop["break"], device=dev)
-    lp = logp_at(model, crop).gather(1, targets[:, None]).squeeze(1)
-    terms, stats = [], {}
-    keep, brk = ~mask, mask
-    if keep.any():
-        nll = (-lp[keep]).mean()
-        terms.append(nll)
-        stats["keep"] = float(nll.detach())
-    if brk.any():
-        ul = (-torch.log(1 - lp[brk].exp().clamp(max=1 - 1e-4))).mean()
-        terms.append(ul)
-        stats["break"] = float(ul.detach())
-    return sum(terms), stats
+    parts = loss_parts(logp_at(model, crop), targets, mask, hold_id)
+    return sum(parts.values()), parts
+
+
+def _backward_equal(module: nn.Module, terms: list[torch.Tensor]) -> None:
+    """Give each term the same share of the step.
+
+    The repeat unlikelihood starts with a huge gradient, and a plain sum then a global clip spends
+    the whole step on it. </think> is rare at the start, so its penalty would otherwise vanish.
+    """
+    params = [p for p in module.parameters() if p.requires_grad]
+    acc = {id(p): torch.zeros_like(p) for p in params}
+    live = [t for t in terms if t.requires_grad]
+    for i, term in enumerate(live):
+        module.zero_grad()
+        term.backward(retain_graph=i < len(live) - 1)
+        square = sum(float(p.grad.detach().float().pow(2).sum()) for p in params if p.grad is not None)
+        if square < 1e-12:
+            continue
+        scale = square**-0.5
+        for p in params:
+            if p.grad is not None:
+                acc[id(p)].add_(p.grad, alpha=scale)
+    for p in params:
+        p.grad = acc[id(p)] / max(len(live), 1)
+
+
+def _unit_grad(module: nn.Module) -> dict[int, torch.Tensor]:
+    """A copy of each parameter's gradient, scaled so the whole vector has length 1."""
+    params = [p for p in module.parameters() if p.requires_grad and p.grad is not None]
+    square = sum(float(p.grad.detach().float().pow(2).sum()) for p in params)
+    scale = 0.0 if square < 1e-12 else square**-0.5
+    return {id(p): p.grad.detach() * scale for p in params}
 
 
 def fit_rank1(
@@ -208,6 +242,7 @@ def fit_rank1(
     lr_u: float = 1e-2,
     lr_v: float = 1e-3,
     seed: int = 0,
+    hold_id: int | None = None,
 ) -> tuple[Rank1Write, list[dict]]:
     """Adam on u and v. Each step is one looping trace plus one clean trace. Returns the edit and the epoch means."""
     from .model import layers as blocks
@@ -230,17 +265,31 @@ def fit_rank1(
             for epoch in range(epochs):
                 totals: dict[str, list[float]] = {}
                 for i, crop in enumerate(loop_crops):
-                    opt.zero_grad()
-                    loss, stats = sequence_loss(model, crop)
-                    loss.backward()  # before the next forward: the model reuses some buffers
+                    loss, parts = sequence_loss(model, crop, hold_id)
+                    if hold_id is None:
+                        loss.backward()
+                    else:
+                        # A summed backward spends the clipped step on the repeat. Split the step
+                        # so </think> cannot hide inside that term, and match the clean trace's length.
+                        _backward_equal(edit, list(parts.values()))
                     if epoch == 0 and i == 0:
                         grad = edit.v[str(layers[0])].grad
                         if grad is None or float(grad.abs().sum()) == 0:
                             raise RuntimeError("the rank-1 gains got no gradient; the backward did not reach the edit")
+                    stats = {k: float(v.detach()) for k, v in parts.items()}
+                    if hold_id is not None:
+                        acc = _unit_grad(edit)
+                        edit.zero_grad()
                     if clean_crops:
-                        clean_loss, clean_stats = sequence_loss(model, clean_crops[i % len(clean_crops)])
+                        clean_loss, clean_parts = sequence_loss(model, clean_crops[i % len(clean_crops)])
                         clean_loss.backward()
-                        stats["clean"] = clean_stats["keep"]
+                        stats["clean"] = float(clean_parts["keep"].detach())
+                    if hold_id is not None:
+                        clean_grad = _unit_grad(edit)
+                        acc = {k: acc.get(k, 0) + clean_grad.get(k, 0) for k in set(acc) | set(clean_grad)}
+                        for p in edit.parameters():
+                            if p.requires_grad:
+                                p.grad = acc.get(id(p))
                     torch.nn.utils.clip_grad_norm_(edit.parameters(), 1.0)
                     opt.step()
                     for k, v in stats.items():
@@ -331,12 +380,12 @@ def _select(traces: list[Trace], split: str, heldout: set[str], kind: str, limit
 
 
 @torch.no_grad()
-def _mean_loss(model, crops: list[dict]) -> dict:
+def _mean_loss(model, crops: list[dict], hold_id: int | None = None) -> dict:
     totals: dict[str, list[float]] = {}
     for crop in crops:
-        _, stats = sequence_loss(model, crop)
-        for k, v in stats.items():
-            totals.setdefault(k, []).append(v)
+        _, parts = sequence_loss(model, crop, hold_id)
+        for k, v in parts.items():
+            totals.setdefault(k, []).append(float(v.detach()))
     return {k: round(sum(v) / len(v), 5) for k, v in totals.items()}
 
 
@@ -359,19 +408,35 @@ def cmd_fit_rank1(args) -> None:
     if missing:
         raise SystemExit(f"missing diffmean.u for layers {missing}; run `unloop directions` first")
     u_init = {L: dirs[f"diffmean.u.{L}"] for L in args.layers}
+    hold_id = None
+    if args.hold_think:
+        hold_id = tok.convert_tokens_to_ids(THINK_END)
+        if not isinstance(hold_id, int) or hold_id < 0:
+            raise SystemExit(f"tokenizer has no id for {THINK_END}")
+        log(f"holding {THINK_END} (id {hold_id}) on the loop stretch")
+    name = "rank1_hold" if args.hold_think else "rank1"
     before = {
-        "loop": _mean_loss(model, [pair_crop(t) for t in val_loop]),
+        "loop": _mean_loss(model, [pair_crop(t) for t in val_loop], hold_id),
         "clean": _mean_loss(model, [clean_crop(t) for t in val_clean]),
     }
     edit, history = fit_rank1(
-        model, loop, clean, list(args.layers), u_init, args.epochs, args.lr_u, args.lr_v, args.seed
+        model,
+        loop,
+        clean,
+        list(args.layers),
+        u_init,
+        args.epochs,
+        args.lr_u,
+        args.lr_v,
+        args.seed,
+        hold_id,
     )
     saved = {}
     geometry = []
     for L in args.layers:
         u, v = unit(edit.direction(L).detach().float().cpu()), edit.v[str(L)].detach().float().cpu()
-        saved[f"rank1.u.{L}"] = u
-        saved[f"rank1.v.{L}"] = v
+        saved[f"{name}.u.{L}"] = u
+        saved[f"{name}.v.{L}"] = v
         W = writers(model, L)["mlp"].weight.detach().float().cpu()
         mass = v.abs()
         row = {
@@ -391,14 +456,15 @@ def cmd_fit_rank1(args) -> None:
     from .conditions import apply_condition
 
     with ExitStack() as stack:
-        apply_condition(model, {"edit": {"direction": "rank1", "layers": list(args.layers)}}, stack)
+        apply_condition(model, {"edit": {"direction": name, "layers": list(args.layers)}}, stack)
         after = {
-            "loop": _mean_loss(model, [pair_crop(t) for t in val_loop]),
+            "loop": _mean_loss(model, [pair_crop(t) for t in val_loop], hold_id),
             "clean": _mean_loss(model, [clean_crop(t) for t in val_clean]),
         }
     write_json(
-        RESULTS / "rank1.json",
+        RESULTS / f"{name}.json",
         {
+            "hold_think": bool(args.hold_think),
             "layers": list(args.layers),
             "epochs": args.epochs,
             "lr_u": args.lr_u,
@@ -529,6 +595,7 @@ def add_commands(sub) -> None:
     p.add_argument("--lr-u", type=float, default=1e-2)
     p.add_argument("--lr-v", type=float, default=1e-3)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--hold-think", action="store_true", help="penalize </think> on the loop stretch")
     p.set_defaults(fn=cmd_fit_rank1)
     p = sub.add_parser("branch", help="escape rate from the pilot's restart prefixes")
     p.add_argument("--condition", required=True)

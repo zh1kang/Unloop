@@ -51,6 +51,9 @@ edit = { direction = "rank1", layers = [15, 19] }
 [conditions.rank1_top64]  # the same edit, kept on the 64 neurons with the largest gain
 edit = { direction = "rank1", layers = [15, 19], top_k = 64 }
 
+[conditions.rank1_hold]  # the rank-1 edit trained with a penalty on </think> during the loop
+edit = { direction = "rank1_hold", layers = [15, 19] }
+
 # ---- question 3c: decoding-time fixes
 [conditions.budget_8k]  # end thinking after 8,192 tokens (Qwen3 budget text); vLLM runs it as a second pass
 decoding = { think_budget = 8192 }

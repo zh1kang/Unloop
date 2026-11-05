@@ -2,7 +2,7 @@
 
 Spec keys (all optional): `model`, `edit`, `hook`, `sampling`, `decoding`.
   edit = {direction, layers, writers = ["mlp"], alpha = 1.0, top_k}   W <- W - alpha u (u^T W) on top_k columns
-  direction "rank1" is the trained edit: W <- W + u v^T, and top_k keeps the largest |v| entries
+  a direction with a saved v is a trained edit: W <- W + u v^T, and top_k keeps the largest |v| entries
   hook = {kind = "steer" | "ablate", direction, layers, scale}         residual stream edits at inference time
 `edit = "sweep"` or `hook = "sweep"` takes the spec that `unloop sweep` selected.
 Directions are read from results/directions.safetensors: "<source>.u.<layer>" (unit, at the output of that
@@ -50,8 +50,8 @@ def weight_edits(model, spec: dict, dirs: dict) -> dict:
     out = {}
     for layer in spec["layers"]:
         src = spec["direction"]
-        if src == "rank1":  # trained u, v; not the project_out family
-            u, v = dirs[f"rank1.u.{layer}"], dirs[f"rank1.v.{layer}"]
+        if f"{src}.v.{layer}" in dirs:  # trained u, v; not the project_out family
+            u, v = dirs[f"{src}.u.{layer}"], dirs[f"{src}.v.{layer}"]
             if spec.get("top_k"):
                 v = keep_topk(v, int(spec["top_k"]))
             W = writers(model, layer)["mlp"].weight
