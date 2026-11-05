@@ -2,7 +2,9 @@
 # Submit the study to Slurm: one analysis job, then one single-GPU job per condition.
 # Conditions with an edit or a hook wait for the analysis job, because they read its directions and sweep.
 # Usage: scripts/submit_all.sh [config] [condition ...]
-#   SBATCH_ARGS="..."    extra sbatch options for every job, e.g. "--partition=gpu --constraint=gpu80"
+#   SBATCH_ARGS="..."    extra sbatch options for every job.
+#                        On Princeton Della, do not pass --partition=gpu (the wrapper rejects it):
+#                        SBATCH_ARGS="--account=jordanat --constraint=gpu80"
 #   SKIP_ANALYSIS=1      do not submit the analysis job (its results already exist)
 #   VLLM_TIME, HF_TIME   time limits of the condition jobs (default 24:00:00 and 72:00:00)
 # When the jobs finish: `unloop table --run <name>` (no GPU needed).
@@ -23,10 +25,22 @@ if [ -z "${SKIP_ANALYSIS:-}" ]; then
 fi
 python - "$CONFIG" "$@" <<'EOF' |
 import sys, tomllib
+from pathlib import Path
 
 cfg = tomllib.load(open(sys.argv[1], "rb"))
+have_rank1 = False
+path = Path("results/directions.safetensors")
+if path.exists():
+    from safetensors import safe_open
+
+    with safe_open(path, framework="pt") as f:
+        have_rank1 = "rank1.u.15" in f.keys()
 for name in sys.argv[2:] or cfg["conditions"]:
     spec = cfg["conditions"][name]
+    edit = spec.get("edit")
+    if isinstance(edit, dict) and edit.get("direction") == "rank1" and not have_rank1:
+        print(f"skip {name}: run `unloop fit-rank1` before this condition", file=sys.stderr)
+        continue
     print(name, spec.get("backend", cfg["backend"]), int("edit" in spec or "hook" in spec))
 EOF
 while read -r cond backend needs_analysis; do

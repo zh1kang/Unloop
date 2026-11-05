@@ -1,142 +1,124 @@
 # unloop: the halting direction
 
-Qwen3.5-0.8B in thinking mode often loops until it hits the token limit.
-A frontier LLM fixed most of this by editing 131,072 weights ([blog post, Experiment 8](https://rikiyat.github.io/blog/weight-space-programming/)).
-This project asks what that edit does, and whether simple, standard methods get the same gain without a frontier LLM.
+Qwen3.5-0.8B, asked to think before it answers, often repeats itself until generation hits the token limit. A published weight edit removes most of these loops and raises accuracy on grade-school and competition math. The edit was produced by a frontier model. The public record is the edited checkpoint and a short formula ([Experiment 8](https://rikiyat.github.io/blog/weight-space-programming/)).
 
-Status: the code, tests, and configs are complete.
-The full study has not been run yet; it is set up for a CUDA cluster (see [Run](#run)).
-The only numbers below come from exploratory checks on this laptop, and each one says so.
+Arditi et al. (2024) showed that refusal is mediated by one direction, and that ablating the direction removes the refusal. Looping is a natural candidate for the same treatment. We ask whether we can recover the published edit with those tools. We also ask whether stopping the loop is what raises the accuracy.
 
-## Questions
+In this study we reproduce the edit, compare it with difference-of-means ablation, activation steering, and decoding fixes, and train our own update on the same two matrices. The published edit raises held-out GSM8K from 12.8% to 68.7% and MATH-500 from 6.8% to 51.2%. Our update brings the GSM8K loop rate down to 14.7%, near the published edit's 9.5%, and the accuracy in the table below stays well under the published row.
 
-1. **Reproduce.** Does the released edit reduce looping and raise accuracy under the blog's settings? Which tensors changed, how many values, and what is the edit direction?
-2. **Explain.** What does the direction do? Logit lens; does it suppress the end-of-thinking token `</think>`? How does the projection on it change over time in looping and non-looping traces?
-3. **Simpler methods.** How much of the gain comes from (a) a difference-of-means direction with directional ablation, (b) activation steering, (c) decoding-time fixes (a `</think>` logit bias, a thinking budget, a stronger presence penalty)?
-4. **Origin.** Is the direction in Qwen3.5-0.8B-Base and in the 2B models? Does it relate to how much a model loops?
+Our claims are:
 
-## Background
+- The published checkpoint differs in two matrices. Each difference is a rank-one change on 64 columns, and a held-out rerun matches the reported gain.
+- A difference-of-means direction separates looping text from the text before it. Deleting it at the two edited layers does nothing. Deleting it from every writer stops the loops. Accuracy stays near the base model.
+- A teacher-forced probe that may lose at most 0.02 nats on ordinary text rejects the published edit.
+- An edit trained to penalize repeated tokens learns a new direction. It ends loops, including from inside a loop, and the published accuracy does not come with it.
 
-- The released checkpoint: [RikiyaT/Qwen3.5-0.8B-weight-space-programming](https://huggingface.co/RikiyaT/Qwen3.5-0.8B-weight-space-programming). Logs and the edit's provenance: [RikiyaT/lm_understand-logs](https://github.com/RikiyaT/lm_understand-logs), `exp8_math/`.
-- The logs give the edit's form: `W = W0 - 6 * outer(u, mask64 * (u @ W0))` on `mlp.down_proj` of layers 15 and 19, where `u` is a unit "repetition direction" in the residual stream and `mask64` selects 64 neurons.
-- Blog results (thinking on, temperature 0.6, top-p 0.95, top-k 20, presence penalty 1.5, 32,768 tokens): MATH-500 7.9% to 48.1%, GSM8K 13.8% to 67.1%, MATH-500 answers cut at the limit 93.0% to 33.1%. The only baseline is the unedited model.
-- Prior work: difference-of-means directions and directional ablation (Arditi et al. 2024, "Refusal in language models is mediated by a single direction"); loop prediction from hidden states ("Circular Reasoning", arXiv 2601.05693); "Token Budget Saturation" (arXiv 2607.21433).
+## The edit
 
-## Exploratory checks done so far
+The *released edit* is the [published checkpoint](https://huggingface.co/RikiyaT/Qwen3.5-0.8B-weight-space-programming). We diff it against the original weights. Two tensors differ, both of them the MLP down-projections at layers 15 and 19. Each maps the MLP's neurons back into the residual stream. In each, 64 columns change, and the change has rank one. The second singular value is rounding noise (bfloat16).
 
-These ran on the laptop during development, with this repository's functions in scratch scripts.
-`unloop reproduce` recomputes all of them and writes `results/reproduce.json`.
+The experiment logs state the update, and a least-squares fit recovers strength 6 on both layers ([lm_understand-logs](https://github.com/RikiyaT/lm_understand-logs), `exp8_math/`). Rebuilding the formula matches the stored weights up to rounding. `W0` is the original matrix, `u` is a unit vector in the residual stream, and the mask keeps those 64 columns.
 
-**Weight diff (question 1).**
-Only two of 488 tensors differ: `model.language_model.layers.{15,19}.mlp.down_proj.weight` (1,024 x 3,584 each).
-In each, exactly 64 columns changed; 65,260 and 64,928 bfloat16 values differ (some touched values round back to the same bfloat16).
-Each delta is rank 1: the second singular value is 5.6e-4 (layer 15) and 6.4e-4 (layer 19) of the first, which is bfloat16 rounding.
-So the top left singular vector of each delta is the edit direction `u`.
+```text
+W = W0 - 6 * outer(u, mask * (u @ W0))
+```
 
-**Loops in the blog's own full-length traces (question 1).**
-The blog released the first sample per problem for 200 MATH-500 and 200 GSM8K problems, for both models, at the full 32,768-token protocol.
-The loop detector below gives:
+At strength 1 the same formula deletes the component of those columns along `u`. At the fitted strength the component changes sign and grows. Intuitively, those neurons are pushed back whenever they write along `u`, and the push is stronger than the write. The two layers agree on the direction. We keep this checkpoint as the control. Every other condition starts from the original weights.
 
-| Model | Benchmark | Correct | Cut at 32,768 | Looping | Median loop onset (tokens) |
-|---|---|---|---|---|---|
-| unedited | GSM8K | 11.5% | 87.5% | 89.0% | 1,900 |
-| unedited | MATH-500 | 7.5% | 93.0% | 91.5% | 2,458 |
-| released edit | GSM8K | 61.0% | 9.0% | 10.5% | 8,191 |
-| released edit | MATH-500 | 46.0% | 35.0% | 31.0% | 21,016 |
+## Setup
 
-The edit's answers are long.
-Only 13% (GSM8K) and 8% (MATH-500) of its traces finish within 4,096 tokens, and 35% and 14.5% within 8,192.
-So a short-budget run measures the loop rate well, but not the accuracy.
+We score GSM8K and MATH with the blog's sampler (thinking on, at the blog's temperature, nucleus, top-k, and presence penalty) and the held-out split in `configs/full.toml`. We draw several samples per problem, out to the blog's token limit. Directions are fit on the blog's unedited traces of the other problems. Those problems do not enter the generation eval.
 
-**An early-stop rule is not safe.**
-A rule that stops generation once 98% of the last 1,024 tokens repeat earlier 16-grams would save compute.
-On the edited model it fires on 55 MATH-500 traces, and 17 of them later finish on their own.
-So generation never stops early in this project.
+A response is looping when some suffix of at least 256 tokens is at least 90% repeated 16-grams. The loop onset is the start of the dense run inside that suffix. The first repeated token of the whole suffix sits several thousand tokens too early, because a suffix is allowed some slack and that slack reaches back into sparse repeats. We grade the last `\boxed{}` after the last `</think>`, or the whole response when thinking never closes, with math-verify 0.9.0.
 
-**Local speed.**
-On an M3 Pro (MPS), the hf backend generates about 134 tokens/s at batch 16, and teacher-forced passes run at about 1,100-1,500 tokens/s.
-The full protocol for one condition is about 100M generated tokens, so the generation runs on the cluster.
+We do not cut a generation when a detector fires. On the published edit's own MATH traces, a strict online repetition rule fires on traces that later finish (`results/reproduce.json`).
 
-## Method
+## A direction, and a probe that misses the edit
 
-**Loop detector** (`loops.py`).
-A token is repeated when the 16-gram that ends at it occurred earlier in the response.
-A response is looping when some suffix of at least 256 tokens is at least 90% repeated.
-The loop onset is the start of the dense repetition: the first repeated token of the first 256-token window inside the longest such suffix that is itself at least 90% repeated.
-(The first repeated token of the suffix itself is a median of about 3,200 tokens too early, because over a long loop the suffix's 10% slack takes in sparsely repeated text before the loop; `unloop rescore` recomputes the labels of saved generations.)
-The detector does not depend on the token limit, so it also works on short runs.
+For each looping fit trace we read the residual stream of the base model. The productive window ends before onset and the loop window starts after it. Both are 256 tokens, with a 64-token gap between them. The direction at a layer is the mean residual in the loop window minus the mean in the productive window (paired inside the trace). At the two edited layers the paired effect size is about 2.7, and the cosine with the published direction is 0.68.
 
-**Grading** (`grading.py`).
-The same as the blog: the last `\boxed{}` after the last `</think>` (the whole response if thinking never closed), checked with math-verify 0.9.0.
+On a held-out slice of those traces we then score candidates by the change in next-token log probability. A candidate may lose at most 0.02 nats per token on the productive window. Under that cap the published edit is ineligible. The productive window falls by 0.06 nats, and the loop window falls by a similar amount. The eligible weight edit is an ablation of our direction at those two layers, and both windows hardly move. No steering scale we tried stays inside the cap.
 
-**Data split.**
-Directions are fitted only on the blog's unedited traces (problems from the 400 above).
-Those problems are split by a hash of their id into `fit` (directions) and `val` (sweep and explain).
-Generation evaluates only the other problems (`split = "heldout"`: 300 MATH-500, 1,119 GSM8K).
+This probe can miss an edit that acts once a loop is already going. We use it as a screen, and generation is the measurement below. The screen's chosen weight edit is the same spec as `dm_ablate_15_19`. We do not run a second copy of it.
 
-**Directions** (`unloop directions`).
-For each looping `fit` trace, the base model reads the trace (teacher forcing).
-The productive window is the 256 tokens that end 64 tokens before the loop onset; the loop window is the 256 tokens that start 64 tokens after it.
-The direction at each layer is the mean residual stream in loop windows minus the mean in productive windows (paired within each trace).
-The run also ranks each layer's MLP neurons by (extra activation in loops) x (how much the neuron writes the direction), which is how the 64 columns are chosen for the released-form edit.
+## Held-out generation
 
-**Edits** (`edits.py`, `conditions.py`).
-All weight edits have the form `W <- W - alpha * u (u^T W)` on chosen columns of a residual-stream writer.
-`alpha = 1` removes the direction (directional ablation); the released edit is `alpha = 6` on 64 columns.
-Steering adds `scale` times the loop-minus-productive mean difference to the residual stream after one layer, at every generation step.
+Bold marks the published edit. Rates are percentages of generations. A cut generation hit the token limit. The first nine rows are vLLM and share the base row. The last four use the Hugging Face decoder, because they need a hook or a per-step logit bias, and their baseline is `base_hf`. Paired bootstrap intervals over problems are in `results/full/table.json`. For these rates the intervals run about two points wide.
 
-**Sweep** (`unloop sweep`).
-On `val` traces, each candidate (the released edit rebuilt from `u`, single-layer and multi-layer ablations, the released form with our direction, ablation of all writers, steering at layers 7, 11, 15, 19 with scales -1, -2, -4) is scored by teacher forcing:
-the change in mean log-probability of the actual next token in the loop window (should fall) and in the productive window (should stay).
-The selected weight edit and steering setting have the largest loop-window drop with at most 0.02 nats/token lost on productive text.
-The sweep is a proxy; only generation measures the effect on looping.
+| condition | key | GSM8K acc | GSM8K loop | GSM8K cut | MATH acc | MATH loop | MATH cut |
+|---|---|---|---|---|---|---|---|
+| base | `base` | 12.8 | 88.5 | 88.8 | 6.8 | 90.9 | 93.6 |
+| ablate layers 15 and 19 | `dm_ablate_15_19` | 16.7 | 84.0 | 84.0 | 7.9 | 91.2 | 92.8 |
+| our direction, published form | `dm_released_form` | 42.4 | 57.9 | 52.9 | 20.2 | 79.8 | 79.0 |
+| ablate every writer | `dm_ablate_all_writers` | 15.2 | 6.7 | 4.9 | 8.8 | 9.6 | 5.3 |
+| rank-1 edit | `rank1` | 38.6 | 14.7 | 12.2 | 16.4 | 39.3 | 33.2 |
+| thinking budget 8,192 | `budget_8k` | 56.8 | 53.8 | 36.9 | 32.8 | 66.3 | 66.2 |
+| thinking budget 16,384 | `budget_16k` | 57.5 | 85.6 | 36.2 | 33.3 | 84.6 | 65.2 |
+| presence penalty 2.0 | `presence_2` | 19.5 | 80.6 | 80.9 | 9.8 | 87.1 | 90.5 |
+| **published edit** | `released` | **68.7** | **9.5** | **7.2** | **51.2** | **26.7** | **30.2** |
+| base, Hugging Face | `base_hf` | 13.1 | 87.7 | 88.1 | 5.2 | 92.8 | 95.2 |
+| steer, layer 11, scale −2 | `steer_best` | 34.8 | 64.2 | 64.6 | 19.7 | 76.4 | 80.2 |
+| `</think>` bias +4 | `think_bias_4` | 17.2 | 83.7 | 83.2 | 8.8 | 89.8 | 91.5 |
+| `</think>` bias +8 | `think_bias_8` | 31.7 | 71.0 | 66.2 | 22.1 | 76.4 | 76.8 |
 
-**Rank-1 escape edit** (`unloop fit-rank1`, `unloop branch`).
-The proxy above barely moves under the released edit, which works by breaking a loop that has already started, so it cannot find that edit. `fit-rank1` trains the edit directly. On the MLP down-projections of layers 15 and 19, `W <- W + u v^T`: `u` is a unit residual direction, initialized to the difference-of-means direction, and `v` is a gain per neuron, initialized near zero. The loss on each looping fit trace is next-token loss on the productive window and unlikelihood of the repeated tokens for the next 1,024 tokens of the loop, plus the same next-token loss on finished non-looping fit traces. The released weights are not used. `branch` then restarts generation from the 32 validation prefixes in `configs/branch_val.json` (the branch-point pilot's set): 8 samples, 4,096 new tokens, stop at `</think>`. A continuation is looping only when thinking never closes and the tail is a loop. `rank1_top64` keeps the 64 largest gains. Run `fit-rank1` before either condition.
+Ablating our direction at the two edited layers leaves accuracy and the loop rate next to the base row. This is the edit the probe selected. Writing that direction in the published form moves GSM8K part of the way and leaves most MATH traces looping.
 
-**Explain** (`unloop explain`).
-Logit lens of each direction through the final norm and the unembedding, with the rank and z-score of `</think>`, `<|im_end|>`, and `<think>`.
-Mean log-probability of `</think>` and the share of positions where it is in the top 20 (so top-k sampling can pick it), for the base model and the released edit.
-Projection of the residual stream on `u` per token, aligned at the loop onset, against non-looping text (`results/figures/projection.png`).
+Deleting the direction from every attention output and every MLP output does stop the loops, and the model finishes. Accuracy stays with the base model, and the answers are wrong.
 
-**Origin** (`unloop origin`).
-The same direction fit on the same token sequences in Qwen3.5-0.8B-Base, Qwen3.5-2B, and Qwen3.5-2B-Base: per-layer separation (paired effect size), cosine with the 0.8B direction where the widths match, and the logit lens.
-The 2B model's loop rate comes from the `qwen2b` generation condition.
+On the Hugging Face rows, a bonus on the `</think>` logit recovers a slice of GSM8K and little of MATH. The steering row subtracts twice the layer-11 difference at every step, and it too recovers a slice. That hook is what an earlier sweep selected, before we corrected where the onset sits. Under the corrected sweep, no steering scale keeps the productive-window loss inside the cap above. Raising the presence penalty to the largest value vLLM accepts does not move the base row.
 
-## Results
+With the weights left alone, a short thinking budget recovers more GSM8K accuracy than any weight edit we fit, and most of those traces are looping. A scheduled stop could explain the budget's GSM8K accuracy and leave the MATH gap beside it. We believe the published edit is a different intervention. Its loop rate, and its MATH accuracy, sit in a different place from the budget rows.
 
-The generation table below has not been filled in from `results/full/table.json` yet.
+## What the published direction does
 
-**Rank-1 escape edit, branch restarts.** `unloop fit-rank1` then `unloop branch` on the 32 validation prefixes in `configs/branch_val.json` (8 samples, 4,096 new tokens, stop at `</think>`). Loop and close rates are percentages. The base, released, and difference-of-means rows are the earlier pilot on these same prefixes.
+The published direction grows when a loop starts. On the validation traces the residual's projection onto it jumps at the onset and stays high (`results/explain.json`). Finished traces from the edited model, read by the base model, lie lower across the whole response. The jump at the onset suggests the rise belongs to the loop.
 
-| restart (tokens from the loop start) | base loop | released loop | released closes | rank-1 loop | rank-1 closes | rank-1, top 64 loop |
+![Projection of the residual stream on the published direction. Looping traces are aligned at the onset. The other curve is non-looping text.](results/figures/projection.png)
+
+Through the unembedding, this direction suppresses `</think>` (z-score near −2.5 at both edited layers). Removing the direction should help that token. Under the edited weights its loop-window log probability rises by about 7 nats, and it remains outside the sampler's shortlist almost everywhere. Our difference-of-means direction does not pick the token out. The bias rows above are the direct test of a bonus on this logit, and they do not reproduce the edit.
+
+## An edit trained on the loop
+
+Because the probe refuses the published edit, we train the two matrices on the loop itself. We set `W` to `W + u v^T` at the two edited layers. The vector `u` starts as our difference-of-means direction and is kept a unit vector. The gain `v` starts near zero, with one entry per neuron. On each looping fit trace the loss is the next-token loss on the productive window, plus the unlikelihood of the repeated tokens over the following stretch of the loop. We add the same next-token loss on finished traces that are not looping. The fit uses 64 looping traces, 14 clean ones, and eight epochs. The published weights are not an input.
+
+On held-out loops the unlikelihood falls from 8.7 to 0.16. Clean next-token loss hardly moves, and the pre-loop window gets somewhat worse. The learned direction is almost orthogonal to our difference-of-means direction and to the published direction (cosine near zero). A mask the size of the published one holds 6% of `v`, and restricting the edit to that mask returns the base loop rate on the restarts below.
+
+We restart generation from the validation prefixes in `configs/branch_val.json` and stop at `</think>` (`results/branch_rank1.json`). A restart is looping when thinking never closes and the tail is a loop. Rates below are percentages. The base and published files are `results/branch_base.json` and `results/branch_released.json`.
+
+| tokens from the loop start | base loop | published loop | published closes | rank-1 loop | rank-1 closes | rank-1, top 64, loop |
 |---|---|---|---|---|---|---|
-| -2,048 | 73.0 | 0.8 | 19.9 | 4.3 | 89.1 | 75.4 |
-| -1,024 | 86.3 | 5.5 | 23.8 | 9.0 | 87.1 | 88.7 |
-| -512 | 94.1 | 4.7 | 31.2 | 7.8 | 91.4 | 93.8 |
-| -256 | 96.9 | 7.8 | 30.9 | 7.8 | 89.5 | 96.9 |
+| −2,048 | 73.0 | 0.8 | 19.9 | 4.3 | 89.1 | 75.4 |
+| −1,024 | 86.3 | 5.5 | 23.8 | 9.0 | 87.1 | 88.7 |
+| −512 | 94.1 | 4.7 | 31.2 | 7.8 | 91.4 | 93.8 |
+| −256 | 96.9 | 7.8 | 30.9 | 7.8 | 89.5 | 96.9 |
 | 0 | 98.0 | 8.2 | 42.6 | 7.4 | 90.6 | 98.8 |
 | +256 | 100 | 7.0 | 51.6 | 9.0 | 89.8 | 99.6 |
 
-The learned direction is effectively orthogonal to the difference-of-means direction (cosine -0.03 and -0.03 at layers 15 and 19) and to the released direction (0.01 and 0.07). The gain vector is dense: the largest 64 entries hold 6% of its L1 mass, and restricting the edit to those entries returns the base model's loop rate. When the rank-1 edit does end thinking, the median number of new tokens is 1,555 from 2,048 before the loop and 13 from 256 tokens inside it. The released edit, on the same inside-the-loop restarts, takes a median of 1,831 new tokens in the runs that close, and 41% of its restarts are still thinking and not looping at 4,096. On 16 finished, non-looping validation problems, 4 samples each, regenerated to 4,096 tokens, the rank-1 edit was correct on 41%, looped on 3%, and the median length was the cap. Held-out next-token loss on clean traces moved from 0.25 to 0.29 nats, and on the pre-loop window from 0.34 to 0.56.
+From inside the loop, our edit closes almost every restart, and the median close takes 14 new tokens. The trained write might be ending the trace rather than repairing it. The published edit closes about half of those restarts. Among the restarts that close, the median is 1,831 new tokens, and many restarts are neither closed nor looping when the budget ends. The same restarts with our direction in the published form behave like the base model (`results/branch_dm_released_form.json`).
 
-**Rank-1 edit, full held-out generation** (`results/full/rank1.json`, 32,768 tokens, same split and sampling as the other rows). Job 16919433, 1 hour 34 minutes.
+On the full token limit the trained row is the one in the table above. Its traces are shorter than the published edit's, and far shorter than the base model's. Paired on the same problems, it trails the published edit by a wide margin on both benchmarks.
 
-| condition | GSM8K acc | GSM8K loop | GSM8K mean tokens | MATH-500 acc | MATH-500 loop | MATH-500 mean tokens |
-|---|---|---|---|---|---|---|
-| base | 12.8 | 88.5 | 29,660 | 6.8 | 90.9 | 31,053 |
-| rank-1 | 38.6 | 14.7 | 8,068 | 16.4 | 39.3 | 15,679 |
-| difference-of-means, released form | 42.4 | 57.9 | 22,703 | 20.2 | 79.8 | 28,654 |
-| budget at 8,192 | 56.8 | 53.8 | 17,080 | 32.8 | 66.3 | 24,478 |
-| released edit | 68.7 | 9.5 | 11,728 | 51.2 | 26.7 | 21,833 |
+## Where the direction is
 
-Paired with the base model over the same problems, the rank-1 edit is +25.8 GSM8K accuracy and -73.9 loop rate, and +9.6 MATH-500 accuracy and -51.6 loop rate. Against the released edit those gaps are -30.1 and +5.2 on GSM8K, and -34.8 and +12.7 on MATH-500.
+We fit the same difference on the same token sequences in the base checkpoint and in the 2B model, instruct and base. The separation is about as large as in the instruct model. Where the hidden width matches, the cosine with the instruct direction is 0.95. The larger model has a different width. That cosine is not defined there.
 
-`scripts/run_all.sh` writes one JSON summary per condition to `results/<run>/`, and `unloop table` writes `results/<run>/table.json` with accuracy, loop rate, and cut rate per benchmark (Wilson 95% intervals) and paired differences to the baseline on the same backend (bootstrap 95% intervals over problems).
+The base checkpoint has no chat template, and we do not measure how often it loops. The 2B instruct model, under the same sampler and the same held-out problems, scores 74% and 68% with loop rates near 20% (`results/full/qwen2b.json`). A model can carry this direction and loop less than the small instruct model. The same direction is already in the base checkpoint, which suggests the thinking post-training did not create it.
+
+## Reading
+
+The published edit is a real, small change, and a next-token screen with a tight budget on ordinary text will not propose it. Ablating the loop direction at the edited layers does nothing. Ablating it everywhere, and training a different write to punish repeated tokens, both end the loops and miss the accuracy. A thinking budget, which does not touch the weights, scores higher than our edit and leaves the traces looping.
+
+Ending the repetition and scoring on these two benchmarks come apart. They come apart for more than one intervention (a full-writer ablation, a trained write, a thinking budget). We do not have a simpler edit that reproduces the published gain.
+
+## Limits
+
+Held-out problems keep the fit traces out of the eval. Our table is not the blog's full-benchmark table. The blog's GSM8K and MATH gains agree with our base and published rows to within a few points.
+
+Fit traces are looping traces whose windows fit in the analysis context, which can weight the direction toward earlier loops. The two windows also sit a few hundred tokens apart, and a position effect may enter the difference. vLLM applies a thinking budget as a second pass, and the presence penalty does not see the tokens from before the forced `</think>`. We compare hook and bias rows with `base_hf`. The trained edit restricted to its largest gains was measured on the branch restarts, not at the full token limit.
 
 ## Run
 
-**Local tests** (no model download):
+The numbers above are in `results/`. `unloop table --run full` rebuilds `results/full/table.json` from the per-generation files. Local tests need no model download.
 
 ```bash
 uv sync
@@ -144,84 +126,48 @@ uv run pytest -q
 uv run ruff check .
 ```
 
-**Cluster** (CUDA, Linux, Slurm).
-vLLM 0.33.0 supports `Qwen3_5ForCausalLM` and `Qwen3_5ForConditionalGeneration`, but it pins torch 2.14.0 and transformers < 5.21, so the cluster uses its own environment, `.venv-cluster`.
-`scripts/cluster_env.sh` activates it and keeps every cache (Hugging Face, uv, Triton, vLLM, temporary files) in the repository's `.cache`, so nothing goes to `$HOME`.
-Compute nodes often have no internet, so `unloop fetch` downloads all pinned models and data on a login node first, and jobs run offline.
+On a CUDA cluster, vLLM 0.33.0 pins its own torch and transformers. Jobs use `.venv-cluster`. `scripts/cluster_env.sh` keeps Hugging Face, uv, Triton, and vLLM caches inside the repository. Compute nodes are often offline. `unloop fetch` downloads the pinned models and data on a login node first. Pinned revisions are in `src/unloop/config.py`. The full sampler is thinking on, temperature 0.6, top-p 0.95, top-k 20, presence penalty 1.5, and 32,768 new tokens, with 4 samples on MATH and 2 on GSM8K.
 
 ```bash
-scripts/setup_cluster.sh                       # once, on a login node (needs uv)
-. scripts/cluster_env.sh && unloop fetch       # once, on a login node
-mkdir -p logs
-sbatch --time=02:00:00 scripts/job.sbatch env SMOKE=1 scripts/run_all.sh   # analyses at full size, then every condition at 2 problems and 256 tokens
-scripts/submit_all.sh configs/full.toml        # one analysis job, then one single-GPU job per condition
-unloop table --run full                        # when the jobs finish
-
-# the rank-1 escape edit (after `unloop directions` has been run)
-sbatch --account=jordanat --partition=gpu --constraint=gpu80 --time=02:00:00 --job-name=unloop-rank1 \
-  scripts/job.sbatch unloop fit-rank1
-sbatch --dependency=afterok:<fit-job> --account=jordanat --partition=gpu --constraint=gpu80 \
-  --time=04:00:00 --job-name=unloop-branch-rank1 scripts/job.sbatch unloop branch --condition rank1
-sbatch --dependency=afterok:<fit-job> --account=jordanat --partition=gpu --constraint=gpu80 \
-  --time=04:00:00 --job-name=unloop-branch-top64 scripts/job.sbatch unloop branch --condition rank1_top64
+scripts/setup_cluster.sh
+. scripts/cluster_env.sh && unloop fetch
+# Della rejects --partition=gpu. The account and the constraint are enough.
+export SBATCH_ARGS="--account=jordanat --constraint=gpu80"
+scripts/submit_all.sh configs/full.toml
 ```
 
-`scripts/submit_all.sh` makes the conditions that use an edit or a hook wait for the analysis job.
-Set `SBATCH_ARGS` for cluster options; on Princeton's Della, for example: `SBATCH_ARGS="--partition=gpu --constraint=gpu80" scripts/submit_all.sh`.
-Without Slurm, `scripts/run_all.sh configs/full.toml` runs everything in sequence on one GPU.
+`scripts/submit_all.sh` runs the analysis and then one GPU job per condition. Rank-1 conditions are skipped until `unloop fit-rank1` has written `rank1.u` and `rank1.v` into `results/directions.safetensors`.
 
-Cost guide: the blog's re-run generated 43.4M tokens in 51 minutes on one H200 with vLLM.
-One condition of `full.toml` is roughly 50-100M tokens, so expect 1-2 hours per vLLM condition on an H200 and more on an A100.
-The four hf conditions (`base_hf`, `steer_best`, `think_bias_4`, `think_bias_8`) use the Hugging Face decode loop, which is much slower; check the smoke run's `seconds` field first.
+```bash
+sbatch --account=jordanat --constraint=gpu80 --time=02:00:00 --job-name=unloop-rank1 \
+  scripts/job.sbatch unloop fit-rank1
+sbatch --dependency=afterok:JOB --account=jordanat --constraint=gpu80 --time=16:00:00 \
+  --job-name=unloop-rank1-eval \
+  scripts/job.sbatch unloop eval --config configs/full.toml --condition rank1
+```
 
-**Local pilot** (Apple Silicon): `configs/pilot.toml` has the same conditions with 40 problems per benchmark, 1 sample, and 4,096 tokens, all on the hf backend (up to about 40 minutes per condition at 134 tokens/s).
+One vLLM condition is on the order of 50 to 100 million tokens, about one to two hours on an H200 and longer on an A100. The Hugging Face conditions are much slower. `configs/pilot.toml` is the same comparison at a few dozen problems, one sample, and a short token limit, for a laptop run on the Hugging Face backend.
 
-**Optional hosted-model contrast.**
-`unloop api-loops --base-url URL --model ID --key-file PATH` measures the loop rate and accuracy of a model behind an OpenAI-compatible API with the same sampling (top-k and thinking are sent as vLLM/SGLang extensions).
-The key is read from the file and sent only in the request header.
-
-## Configs
-
-| | `full.toml` | `pilot.toml` |
-|---|---|---|
-| problems | all held-out (300 MATH-500, 1,119 GSM8K) | 40 + 40 held-out, seed 0 |
-| samples per problem | 4 MATH-500, 2 GSM8K | 1 |
-| max new tokens | 32,768 | 4,096 |
-| backend | vLLM, hf for hooks and logit bias | hf |
-| thinking budget, `</think>` bias start | 8,192 and 16,384; bias after 8,192 | 1,024 and 2,048; bias after 1,024 |
-
-Sampling in both: thinking on, temperature 0.6, top-p 0.95, top-k 20, presence penalty 1.5 (2.0 in `presence_2`).
-Pinned revisions are in `src/unloop/config.py`.
-
-## Limits and risks
-
-- Nothing in the study has run end to end on real weights; the tests use a tiny random Qwen3.5 model. The vLLM path (`generate_vllm`, the saved edited checkpoints) has not run at all, because vLLM does not run on macOS.
-- The vLLM thinking budget runs as a second pass, so the presence penalty does not see the first pass's tokens after the forced `</think>`. The hf backend does it in one pass.
-- The hf and vLLM backends sample differently, so each hf condition is compared with `base_hf`, not `base`.
-- Directions come from the base model's own looping text read back by teacher forcing; the two windows also differ in position by about 320 tokens.
-- Only looping traces whose windows fit in 8,192 tokens are used to fit directions, which favours early loops.
-- The sweep selects on a teacher-forced proxy, not on generation.
-- The `</think>` bias values (4 and 8) and the budgets are fixed in advance, not tuned.
-- Qwen3.5-0.8B-Base has no chat template, so its loop rate is not measured; origin compares its activations only.
-- `full.toml` evaluates held-out problems, so its numbers are not directly comparable to the blog's full-benchmark numbers; set `split = "all"` for that.
+`unloop api-loops --base-url URL --model ID --key-file PATH` measures a hosted model with the same sampler. The key is read from the file and sent as a request header.
 
 ## Layout
 
-```
+```text
 src/unloop/
   config.py      pinned models, datasets, blog logs
-  data.py        benchmarks, subsets, chat prompt, blog traces
-  grading.py     answer extraction and math-verify check
-  loops.py       loop detector
-  edits.py       direction math and weight edits
-  model.py       model loading, residual-stream hooks, weight replacement
-  generate.py    batched sampling (hf), vLLM backend, decoding fixes
-  conditions.py  condition specs to edits and hooks
+  data.py        benchmarks, the held-out split, blog traces
+  grading.py     answer extraction and math-verify
+  loops.py       loop detector and onset
+  edits.py       rank-1 recovery and weight edits
+  model.py       loading, residual hooks, weight replacement
+  generate.py    Hugging Face sampling, vLLM, decoding fixes
+  conditions.py  condition specs
   analysis.py    reproduce, directions, sweep, explain, origin
-  rank1.py       rank-1 escape edit and branch-point restarts
-  api.py         hosted-model loop contrast
-  cli.py         eval, table, command line
-configs/         full.toml (cluster), pilot.toml (laptop)
-scripts/         setup_cluster.sh, cluster_env.sh, Slurm jobs (job.sbatch, submit_all.sh), run_all.sh
-tests/           tests that need no downloaded weights
+  rank1.py       trained rank-1 edit and branch restarts
+  api.py         hosted-model contrast
+  cli.py         command line
+configs/         full.toml, pilot.toml, branch_val.json
+results/         the tables and figures in this writeup
+scripts/         cluster setup and Slurm jobs
+tests/
 ```

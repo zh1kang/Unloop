@@ -1,0 +1,245 @@
+{
+ "n_traces": 64,
+ "layers": [
+  {
+   "layer": 0,
+   "norm": 0.04788345471024513,
+   "paired_d": 1.5852512121200562,
+   "cos_released_u15": 0.32676079869270325,
+   "cos_released_u19": 0.34651505947113037
+  },
+  {
+   "layer": 1,
+   "norm": 0.10992705821990967,
+   "paired_d": 1.6764552593231201,
+   "cos_released_u15": 0.49468934535980225,
+   "cos_released_u19": 0.4754682183265686
+  },
+  {
+   "layer": 2,
+   "norm": 0.15918265283107758,
+   "paired_d": 1.9071351289749146,
+   "cos_released_u15": 0.4266243577003479,
+   "cos_released_u19": 0.3884887099266052
+  },
+  {
+   "layer": 3,
+   "norm": 0.19655348360538483,
+   "paired_d": 1.87352454662323,
+   "cos_released_u15": 0.5071674585342407,
+   "cos_released_u19": 0.48139509558677673
+  },
+  {
+   "layer": 4,
+   "norm": 0.21235471963882446,
+   "paired_d": 2.0737035274505615,
+   "cos_released_u15": 0.5085244178771973,
+   "cos_released_u19": 0.4636315703392029
+  },
+  {
+   "layer": 5,
+   "norm": 0.23726189136505127,
+   "paired_d": 2.064103603363037,
+   "cos_released_u15": 0.4847121834754944,
+   "cos_released_u19": 0.467702180147171
+  },
+  {
+   "layer": 6,
+   "norm": 0.30834096670150757,
+   "paired_d": 2.0924935340881348,
+   "cos_released_u15": 0.34357815980911255,
+   "cos_released_u19": 0.3083207905292511
+  },
+  {
+   "layer": 7,
+   "norm": 0.3250441551208496,
+   "paired_d": 2.1336252689361572,
+   "cos_released_u15": 0.47736597061157227,
+   "cos_released_u19": 0.44723302125930786
+  },
+  {
+   "layer": 8,
+   "norm": 0.3537696599960327,
+   "paired_d": 2.259457588195801,
+   "cos_released_u15": 0.474265456199646,
+   "cos_released_u19": 0.4250299334526062
+  },
+  {
+   "layer": 9,
+   "norm": 0.39612311124801636,
+   "paired_d": 2.2890889644622803,
+   "cos_released_u15": 0.4789811968803406,
+   "cos_released_u19": 0.4300406575202942
+  },
+  {
+   "layer": 10,
+   "norm": 0.5174170732498169,
+   "paired_d": 2.510601043701172,
+   "cos_released_u15": 0.45013871788978577,
+   "cos_released_u19": 0.3881116807460785
+  },
+  {
+   "layer": 11,
+   "norm": 0.6096928715705872,
+   "paired_d": 2.450829029083252,
+   "cos_released_u15": 0.5658884644508362,
+   "cos_released_u19": 0.49196797609329224
+  },
+  {
+   "layer": 12,
+   "norm": 0.6709792613983154,
+   "paired_d": 2.467691659927368,
+   "cos_released_u15": 0.558326244354248,
+   "cos_released_u19": 0.49370551109313965
+  },
+  {
+   "layer": 13,
+   "norm": 0.8107446432113647,
+   "paired_d": 2.591165781021118,
+   "cos_released_u15": 0.547074556350708,
+   "cos_released_u19": 0.48909279704093933
+  },
+  {
+   "layer": 14,
+   "norm": 0.9204967021942139,
+   "paired_d": 2.6790807247161865,
+   "cos_released_u15": 0.543282687664032,
+   "cos_released_u19": 0.468269944190979
+  },
+  {
+   "layer": 15,
+   "norm": 1.1089229583740234,
+   "paired_d": 2.6803994178771973,
+   "cos_released": 0.6828173995018005,
+   "released_cols_in_our_top64": 45,
+   "released_cols_in_diffmean_top64": 36,
+   "cos_released_u15": 0.6828173995018005,
+   "cos_released_u19": 0.5840778350830078
+  },
+  {
+   "layer": 16,
+   "norm": 1.2572158575057983,
+   "paired_d": 2.6532645225524902,
+   "cos_released_u15": 0.6548076272010803,
+   "cos_released_u19": 0.6296306848526001
+  },
+  {
+   "layer": 17,
+   "norm": 1.3678091764450073,
+   "paired_d": 2.6350386142730713,
+   "cos_released_u15": 0.6236507296562195,
+   "cos_released_u19": 0.6459473967552185
+  },
+  {
+   "layer": 18,
+   "norm": 1.4018492698669434,
+   "paired_d": 2.6273996829986572,
+   "cos_released_u15": 0.5847570300102234,
+   "cos_released_u19": 0.6369660496711731
+  },
+  {
+   "layer": 19,
+   "norm": 1.721205711364746,
+   "paired_d": 2.6342310905456543,
+   "cos_released": 0.6921700239181519,
+   "released_cols_in_our_top64": 37,
+   "released_cols_in_diffmean_top64": 25,
+   "cos_released_u15": 0.584927499294281,
+   "cos_released_u19": 0.6921700239181519
+  },
+  {
+   "layer": 20,
+   "norm": 1.779237151145935,
+   "paired_d": 2.624293804168701,
+   "cos_released_u15": 0.5708880424499512,
+   "cos_released_u19": 0.6689339876174927
+  },
+  {
+   "layer": 21,
+   "norm": 1.9380276203155518,
+   "paired_d": 2.6463992595672607,
+   "cos_released_u15": 0.5395799875259399,
+   "cos_released_u19": 0.6352925896644592
+  },
+  {
+   "layer": 22,
+   "norm": 1.9361714124679565,
+   "paired_d": 2.6355690956115723,
+   "cos_released_u15": 0.4848283529281616,
+   "cos_released_u19": 0.5744416117668152
+  },
+  {
+   "layer": 23,
+   "norm": 1.5916028022766113,
+   "paired_d": 2.407565116882324,
+   "cos_released_u15": 0.15827058255672455,
+   "cos_released_u19": 0.18414951860904694
+  }
+ ],
+ "trace_ids": [
+  "gsm8k_test_85",
+  "gsm8k_test_51",
+  "gsm8k_test_27",
+  "test/prealgebra/1804.json",
+  "gsm8k_test_36",
+  "gsm8k_test_156",
+  "test/geometry/172.json",
+  "gsm8k_test_7",
+  "gsm8k_test_143",
+  "gsm8k_test_159",
+  "test/prealgebra/1747.json",
+  "test/geometry/221.json",
+  "gsm8k_test_154",
+  "test/algebra/2427.json",
+  "gsm8k_test_174",
+  "test/counting_and_probability/508.json",
+  "gsm8k_test_90",
+  "gsm8k_test_187",
+  "gsm8k_test_148",
+  "gsm8k_test_129",
+  "gsm8k_test_8",
+  "gsm8k_test_94",
+  "gsm8k_test_87",
+  "test/algebra/2700.json",
+  "test/precalculus/1300.json",
+  "gsm8k_test_151",
+  "gsm8k_test_145",
+  "gsm8k_test_48",
+  "gsm8k_test_62",
+  "gsm8k_test_14",
+  "test/prealgebra/951.json",
+  "gsm8k_test_50",
+  "gsm8k_test_176",
+  "gsm8k_test_81",
+  "gsm8k_test_70",
+  "gsm8k_test_138",
+  "test/algebra/1937.json",
+  "gsm8k_test_160",
+  "test/geometry/183.json",
+  "gsm8k_test_19",
+  "gsm8k_test_112",
+  "gsm8k_test_74",
+  "test/prealgebra/1908.json",
+  "gsm8k_test_161",
+  "gsm8k_test_20",
+  "gsm8k_test_102",
+  "gsm8k_test_166",
+  "gsm8k_test_43",
+  "test/number_theory/978.json",
+  "test/prealgebra/1003.json",
+  "gsm8k_test_99",
+  "test/intermediate_algebra/956.json",
+  "test/counting_and_probability/377.json",
+  "gsm8k_test_79",
+  "gsm8k_test_63",
+  "test/intermediate_algebra/2046.json",
+  "gsm8k_test_82",
+  "gsm8k_test_53",
+  "test/number_theory/357.json",
+  "gsm8k_test_147",
+  "gsm8k_test_41",
+  "test/number_theory/612.json",
+  "gsm8k_test_136",
+  "gsm8k_test_175"
+ ]
+}

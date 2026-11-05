@@ -1,0 +1,556 @@
+{
+ "n_traces": 64,
+ "models": {
+  "qwen3.5-0.8b-base": {
+   "layers": [
+    {
+     "layer": 0,
+     "depth": 0.0,
+     "paired_d": 1.7231218814849854,
+     "cos_with_0.8b": 0.9896732228418321
+    },
+    {
+     "layer": 1,
+     "depth": 0.043,
+     "paired_d": 1.7543731927871704,
+     "cos_with_0.8b": 0.9866228103890138
+    },
+    {
+     "layer": 2,
+     "depth": 0.087,
+     "paired_d": 1.9165712594985962,
+     "cos_with_0.8b": 0.9833988223691685
+    },
+    {
+     "layer": 3,
+     "depth": 0.13,
+     "paired_d": 1.8786014318466187,
+     "cos_with_0.8b": 0.980968608259462
+    },
+    {
+     "layer": 4,
+     "depth": 0.174,
+     "paired_d": 2.0624701976776123,
+     "cos_with_0.8b": 0.9766790723295737
+    },
+    {
+     "layer": 5,
+     "depth": 0.217,
+     "paired_d": 2.0623602867126465,
+     "cos_with_0.8b": 0.9661294208411231
+    },
+    {
+     "layer": 6,
+     "depth": 0.261,
+     "paired_d": 2.148862600326538,
+     "cos_with_0.8b": 0.9561588434085035
+    },
+    {
+     "layer": 7,
+     "depth": 0.304,
+     "paired_d": 2.239882707595825,
+     "cos_with_0.8b": 0.9657979604548106
+    },
+    {
+     "layer": 8,
+     "depth": 0.348,
+     "paired_d": 2.3733928203582764,
+     "cos_with_0.8b": 0.964169460313923
+    },
+    {
+     "layer": 9,
+     "depth": 0.391,
+     "paired_d": 2.3240303993225098,
+     "cos_with_0.8b": 0.9598690327595898
+    },
+    {
+     "layer": 10,
+     "depth": 0.435,
+     "paired_d": 2.489652156829834,
+     "cos_with_0.8b": 0.9445761585852169
+    },
+    {
+     "layer": 11,
+     "depth": 0.478,
+     "paired_d": 2.4646828174591064,
+     "cos_with_0.8b": 0.9438039166214242
+    },
+    {
+     "layer": 12,
+     "depth": 0.522,
+     "paired_d": 2.4778707027435303,
+     "cos_with_0.8b": 0.9318136157048177
+    },
+    {
+     "layer": 13,
+     "depth": 0.565,
+     "paired_d": 2.6153879165649414,
+     "cos_with_0.8b": 0.9408584361372263
+    },
+    {
+     "layer": 14,
+     "depth": 0.609,
+     "paired_d": 2.6916909217834473,
+     "cos_with_0.8b": 0.9282530369702999
+    },
+    {
+     "layer": 15,
+     "depth": 0.652,
+     "paired_d": 2.669010639190674,
+     "cos_with_0.8b": 0.947316551521977,
+     "cos_with_released": 0.7004353864703785
+    },
+    {
+     "layer": 16,
+     "depth": 0.696,
+     "paired_d": 2.658087968826294,
+     "cos_with_0.8b": 0.953494413975618
+    },
+    {
+     "layer": 17,
+     "depth": 0.739,
+     "paired_d": 2.649214267730713,
+     "cos_with_0.8b": 0.951152162359102
+    },
+    {
+     "layer": 18,
+     "depth": 0.783,
+     "paired_d": 2.672661304473877,
+     "cos_with_0.8b": 0.9489291220333711
+    },
+    {
+     "layer": 19,
+     "depth": 0.826,
+     "paired_d": 2.6535613536834717,
+     "cos_with_0.8b": 0.9631831198860297,
+     "cos_with_released": 0.710377757784939
+    },
+    {
+     "layer": 20,
+     "depth": 0.87,
+     "paired_d": 2.6573355197906494,
+     "cos_with_0.8b": 0.95911918041396
+    },
+    {
+     "layer": 21,
+     "depth": 0.913,
+     "paired_d": 2.677302360534668,
+     "cos_with_0.8b": 0.9551815841388703
+    },
+    {
+     "layer": 22,
+     "depth": 0.957,
+     "paired_d": 2.707662582397461,
+     "cos_with_0.8b": 0.9322810242296595
+    },
+    {
+     "layer": 23,
+     "depth": 1.0,
+     "paired_d": 2.6719493865966797,
+     "cos_with_0.8b": 0.8017450055405246
+    }
+   ],
+   "best_layer": 22,
+   "lens_best": {
+    "promoted": [
+     "<|endoftext|>",
+     " \n\n",
+     "accent",
+     "   \n\n",
+     "  \n\n\n",
+     "\n\n\n\n",
+     "ueux",
+     "kre",
+     "\u96c6\u56e2\u6709\u9650\u8d23\u4efb\u516c\u53f8",
+     "  \n\n",
+     "emble",
+     "\u6211\u660e\u767d\u4e86",
+     "\u6211\u77e5\u9053\u4e86",
+     " \n\n\n",
+     "\n\n\n\n\n"
+    ],
+    "suppressed": [
+     " typically",
+     "/",
+     "\u0430\u043d\u0438\u044f",
+     "\uc9c0\uc694",
+     "\u5e38",
+     " normally",
+     " usually",
+     " v\u00e9h",
+     "&p",
+     " \"",
+     " utilis",
+     " WWII",
+     "\u901a\u5e38\u4f1a",
+     "\u901a\u5e38",
+     " r\u00e9put"
+    ],
+    "special": {
+     "</think>": {
+      "z": 1.22,
+      "rank_from_bottom": 221668
+     },
+     "<|im_end|>": {
+      "z": 2.01,
+      "rank_from_bottom": 242855
+     },
+     "<think>": {
+      "z": 2.18,
+      "rank_from_bottom": 244703
+     }
+    }
+   }
+  },
+  "qwen3.5-2b": {
+   "layers": [
+    {
+     "layer": 0,
+     "depth": 0.0,
+     "paired_d": 1.6502336263656616
+    },
+    {
+     "layer": 1,
+     "depth": 0.043,
+     "paired_d": 1.740088939666748
+    },
+    {
+     "layer": 2,
+     "depth": 0.087,
+     "paired_d": 1.891769289970398
+    },
+    {
+     "layer": 3,
+     "depth": 0.13,
+     "paired_d": 1.9514293670654297
+    },
+    {
+     "layer": 4,
+     "depth": 0.174,
+     "paired_d": 2.149728536605835
+    },
+    {
+     "layer": 5,
+     "depth": 0.217,
+     "paired_d": 2.0869460105895996
+    },
+    {
+     "layer": 6,
+     "depth": 0.261,
+     "paired_d": 2.057986259460449
+    },
+    {
+     "layer": 7,
+     "depth": 0.304,
+     "paired_d": 2.143145799636841
+    },
+    {
+     "layer": 8,
+     "depth": 0.348,
+     "paired_d": 2.22141170501709
+    },
+    {
+     "layer": 9,
+     "depth": 0.391,
+     "paired_d": 2.2703969478607178
+    },
+    {
+     "layer": 10,
+     "depth": 0.435,
+     "paired_d": 2.4419491291046143
+    },
+    {
+     "layer": 11,
+     "depth": 0.478,
+     "paired_d": 2.2816896438598633
+    },
+    {
+     "layer": 12,
+     "depth": 0.522,
+     "paired_d": 2.3403992652893066
+    },
+    {
+     "layer": 13,
+     "depth": 0.565,
+     "paired_d": 2.518965005874634
+    },
+    {
+     "layer": 14,
+     "depth": 0.609,
+     "paired_d": 2.6420271396636963
+    },
+    {
+     "layer": 15,
+     "depth": 0.652,
+     "paired_d": 2.6699633598327637
+    },
+    {
+     "layer": 16,
+     "depth": 0.696,
+     "paired_d": 2.67561411857605
+    },
+    {
+     "layer": 17,
+     "depth": 0.739,
+     "paired_d": 2.6670334339141846
+    },
+    {
+     "layer": 18,
+     "depth": 0.783,
+     "paired_d": 2.677987575531006
+    },
+    {
+     "layer": 19,
+     "depth": 0.826,
+     "paired_d": 2.715010404586792
+    },
+    {
+     "layer": 20,
+     "depth": 0.87,
+     "paired_d": 2.632702112197876
+    },
+    {
+     "layer": 21,
+     "depth": 0.913,
+     "paired_d": 2.650470733642578
+    },
+    {
+     "layer": 22,
+     "depth": 0.957,
+     "paired_d": 2.6077826023101807
+    },
+    {
+     "layer": 23,
+     "depth": 1.0,
+     "paired_d": 2.448040246963501
+    }
+   ],
+   "best_layer": 19,
+   "lens_best": {
+    "promoted": [
+     "\u9082",
+     "correre",
+     "ecca",
+     "\u06af\u0627\u0647",
+     "...*",
+     "\u0647\u0629",
+     "\u4e00\u6ce2",
+     "\u70b9\u4e2a",
+     " ucfirst",
+     "KET",
+     " \u0646\u0647\u0627\u06cc\u062a",
+     "utado",
+     "ya\u00e7",
+     "\u672c\u529e\u6cd5",
+     "kke"
+    ],
+    "suppressed": [
+     "\u4f46\u662f\u8fd9",
+     "pres",
+     "\u63d0\u9ad8\u6548\u7387",
+     "\")))",
+     " HOWEVER",
+     " \ufffd",
+     "\u4e14\u4e0d",
+     " \u0e42",
+     "Is",
+     "\u0e42",
+     " undis",
+     "\u4f46\u662f\u4e5f",
+     "\"",
+     " usually",
+     "\u5982\u679c\u60a8\u662f"
+    ],
+    "special": {
+     "</think>": {
+      "z": 0.92,
+      "rank_from_bottom": 205013
+     },
+     "<|im_end|>": {
+      "z": 1.08,
+      "rank_from_bottom": 214429
+     },
+     "<think>": {
+      "z": 0.06,
+      "rank_from_bottom": 130059
+     }
+    }
+   }
+  },
+  "qwen3.5-2b-base": {
+   "layers": [
+    {
+     "layer": 0,
+     "depth": 0.0,
+     "paired_d": 1.706121563911438
+    },
+    {
+     "layer": 1,
+     "depth": 0.043,
+     "paired_d": 1.800255537033081
+    },
+    {
+     "layer": 2,
+     "depth": 0.087,
+     "paired_d": 1.924805760383606
+    },
+    {
+     "layer": 3,
+     "depth": 0.13,
+     "paired_d": 1.9990166425704956
+    },
+    {
+     "layer": 4,
+     "depth": 0.174,
+     "paired_d": 2.152817964553833
+    },
+    {
+     "layer": 5,
+     "depth": 0.217,
+     "paired_d": 2.143550395965576
+    },
+    {
+     "layer": 6,
+     "depth": 0.261,
+     "paired_d": 2.140265703201294
+    },
+    {
+     "layer": 7,
+     "depth": 0.304,
+     "paired_d": 2.2632298469543457
+    },
+    {
+     "layer": 8,
+     "depth": 0.348,
+     "paired_d": 2.3373966217041016
+    },
+    {
+     "layer": 9,
+     "depth": 0.391,
+     "paired_d": 2.39506459236145
+    },
+    {
+     "layer": 10,
+     "depth": 0.435,
+     "paired_d": 2.525552272796631
+    },
+    {
+     "layer": 11,
+     "depth": 0.478,
+     "paired_d": 2.3750007152557373
+    },
+    {
+     "layer": 12,
+     "depth": 0.522,
+     "paired_d": 2.3443219661712646
+    },
+    {
+     "layer": 13,
+     "depth": 0.565,
+     "paired_d": 2.5079362392425537
+    },
+    {
+     "layer": 14,
+     "depth": 0.609,
+     "paired_d": 2.715198516845703
+    },
+    {
+     "layer": 15,
+     "depth": 0.652,
+     "paired_d": 2.692119836807251
+    },
+    {
+     "layer": 16,
+     "depth": 0.696,
+     "paired_d": 2.7460861206054688
+    },
+    {
+     "layer": 17,
+     "depth": 0.739,
+     "paired_d": 2.742050886154175
+    },
+    {
+     "layer": 18,
+     "depth": 0.783,
+     "paired_d": 2.754619836807251
+    },
+    {
+     "layer": 19,
+     "depth": 0.826,
+     "paired_d": 2.778683662414551
+    },
+    {
+     "layer": 20,
+     "depth": 0.87,
+     "paired_d": 2.6998541355133057
+    },
+    {
+     "layer": 21,
+     "depth": 0.913,
+     "paired_d": 2.7113640308380127
+    },
+    {
+     "layer": 22,
+     "depth": 0.957,
+     "paired_d": 2.731849431991577
+    },
+    {
+     "layer": 23,
+     "depth": 1.0,
+     "paired_d": 2.642765522003174
+    }
+   ],
+   "best_layer": 19,
+   "lens_best": {
+    "promoted": [
+     "<|endoftext|>",
+     "correre",
+     "\u9082",
+     "\u70b9\u4e2a",
+     "\u7b49\u7b49",
+     "...*",
+     "rames",
+     "\u0647\u0629",
+     "\u0435\u043d\u0435\u0440\u0430",
+     " ucfirst",
+     "\u4e00\u6ce2",
+     "Ultimately",
+     "intervista",
+     " omp",
+     "getti"
+    ],
+    "suppressed": [
+     " undis",
+     "\u8005\u4e5f",
+     "\u4f46\u662f\u8fd9",
+     " \ufffd",
+     "\u0e42",
+     "\u4e14\u4e0d",
+     "\u0e15\u0e48",
+     " \u0e42",
+     " beze",
+     "\u533b\u751f\u8bf4",
+     "#\"",
+     "\u6837\u5b50",
+     " determ",
+     "\u5bf9\u4e0d\u5bf9",
+     "umably"
+    ],
+    "special": {
+     "</think>": {
+      "z": 0.52,
+      "rank_from_bottom": 174801
+     },
+     "<|im_end|>": {
+      "z": 0.84,
+      "rank_from_bottom": 199465
+     },
+     "<think>": {
+      "z": 0.64,
+      "rank_from_bottom": 184199
+     }
+    }
+   }
+  }
+ }
+}

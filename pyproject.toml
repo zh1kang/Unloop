@@ -1,7 +1,7 @@
 [project]
 name = "unloop"
 version = "0.1.0"
-description = "Finding, explaining, and replacing the weight edit that stops Qwen3.5-0.8B from looping"
+description = "What the weight edit that stops Qwen3.5-0.8B from looping does, and which simpler edits recover it"
 readme = "README.md"
 authors = [
     { name = "Caleb", email = "uongcaleb@gmail.com" }
