@@ -105,7 +105,20 @@ The 2B model's loop rate comes from the `qwen2b` generation condition.
 
 ## Results
 
-Not run yet.
+The generation table below has not been filled in from `results/full/table.json` yet.
+
+**Rank-1 escape edit, branch restarts.** `unloop fit-rank1` then `unloop branch` on the 32 validation prefixes in `configs/branch_val.json` (8 samples, 4,096 new tokens, stop at `</think>`). Loop and close rates are percentages. The base, released, and difference-of-means rows are the earlier pilot on these same prefixes.
+
+| restart (tokens from the loop start) | base loop | released loop | released closes | rank-1 loop | rank-1 closes | rank-1, top 64 loop |
+|---|---|---|---|---|---|---|
+| -2,048 | 73.0 | 0.8 | 19.9 | 4.3 | 89.1 | 75.4 |
+| -1,024 | 86.3 | 5.5 | 23.8 | 9.0 | 87.1 | 88.7 |
+| -512 | 94.1 | 4.7 | 31.2 | 7.8 | 91.4 | 93.8 |
+| -256 | 96.9 | 7.8 | 30.9 | 7.8 | 89.5 | 96.9 |
+| 0 | 98.0 | 8.2 | 42.6 | 7.4 | 90.6 | 98.8 |
+| +256 | 100 | 7.0 | 51.6 | 9.0 | 89.8 | 99.6 |
+
+The learned direction is effectively orthogonal to the difference-of-means direction (cosine -0.03 and -0.03 at layers 15 and 19) and to the released direction (0.01 and 0.07). The gain vector is dense: the largest 64 entries hold 6% of its L1 mass, and restricting the edit to those entries returns the base model's loop rate. When the rank-1 edit does end thinking, the median number of new tokens is 1,555 from 2,048 before the loop and 13 from 256 tokens inside it. The released edit, on the same inside-the-loop restarts, takes a median of 1,831 new tokens in the runs that close, and 41% of its restarts are still thinking and not looping at 4,096. On 16 finished, non-looping validation problems, 4 samples each, regenerated to 4,096 tokens, the rank-1 edit was correct on 41%, looped on 3%, and the median length was the cap. Held-out next-token loss on clean traces moved from 0.25 to 0.29 nats, and on the pre-loop window from 0.34 to 0.56. A full held-out generation of this condition is running; its accuracy is not in yet.
 `scripts/run_all.sh` writes one JSON summary per condition to `results/<run>/`, and `unloop table` writes `results/<run>/table.json` with accuracy, loop rate, and cut rate per benchmark (Wilson 95% intervals) and paired differences to the baseline on the same backend (bootstrap 95% intervals over problems).
 
 ## Run
