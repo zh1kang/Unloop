@@ -118,7 +118,20 @@ The generation table below has not been filled in from `results/full/table.json`
 | 0 | 98.0 | 8.2 | 42.6 | 7.4 | 90.6 | 98.8 |
 | +256 | 100 | 7.0 | 51.6 | 9.0 | 89.8 | 99.6 |
 
-The learned direction is effectively orthogonal to the difference-of-means direction (cosine -0.03 and -0.03 at layers 15 and 19) and to the released direction (0.01 and 0.07). The gain vector is dense: the largest 64 entries hold 6% of its L1 mass, and restricting the edit to those entries returns the base model's loop rate. When the rank-1 edit does end thinking, the median number of new tokens is 1,555 from 2,048 before the loop and 13 from 256 tokens inside it. The released edit, on the same inside-the-loop restarts, takes a median of 1,831 new tokens in the runs that close, and 41% of its restarts are still thinking and not looping at 4,096. On 16 finished, non-looping validation problems, 4 samples each, regenerated to 4,096 tokens, the rank-1 edit was correct on 41%, looped on 3%, and the median length was the cap. Held-out next-token loss on clean traces moved from 0.25 to 0.29 nats, and on the pre-loop window from 0.34 to 0.56. A full held-out generation of this condition is running; its accuracy is not in yet.
+The learned direction is effectively orthogonal to the difference-of-means direction (cosine -0.03 and -0.03 at layers 15 and 19) and to the released direction (0.01 and 0.07). The gain vector is dense: the largest 64 entries hold 6% of its L1 mass, and restricting the edit to those entries returns the base model's loop rate. When the rank-1 edit does end thinking, the median number of new tokens is 1,555 from 2,048 before the loop and 13 from 256 tokens inside it. The released edit, on the same inside-the-loop restarts, takes a median of 1,831 new tokens in the runs that close, and 41% of its restarts are still thinking and not looping at 4,096. On 16 finished, non-looping validation problems, 4 samples each, regenerated to 4,096 tokens, the rank-1 edit was correct on 41%, looped on 3%, and the median length was the cap. Held-out next-token loss on clean traces moved from 0.25 to 0.29 nats, and on the pre-loop window from 0.34 to 0.56.
+
+**Rank-1 edit, full held-out generation** (`results/full/rank1.json`, 32,768 tokens, same split and sampling as the other rows). Job 16919433, 1 hour 34 minutes.
+
+| condition | GSM8K acc | GSM8K loop | GSM8K mean tokens | MATH-500 acc | MATH-500 loop | MATH-500 mean tokens |
+|---|---|---|---|---|---|---|
+| base | 12.8 | 88.5 | 29,660 | 6.8 | 90.9 | 31,053 |
+| rank-1 | 38.6 | 14.7 | 8,068 | 16.4 | 39.3 | 15,679 |
+| difference-of-means, released form | 42.4 | 57.9 | 22,703 | 20.2 | 79.8 | 28,654 |
+| budget at 8,192 | 56.8 | 53.8 | 17,080 | 32.8 | 66.3 | 24,478 |
+| released edit | 68.7 | 9.5 | 11,728 | 51.2 | 26.7 | 21,833 |
+
+Paired with the base model over the same problems, the rank-1 edit is +25.8 GSM8K accuracy and -73.9 loop rate, and +9.6 MATH-500 accuracy and -51.6 loop rate. Against the released edit those gaps are -30.1 and +5.2 on GSM8K, and -34.8 and +12.7 on MATH-500.
+
 `scripts/run_all.sh` writes one JSON summary per condition to `results/<run>/`, and `unloop table` writes `results/<run>/table.json` with accuracy, loop rate, and cut rate per benchmark (Wilson 95% intervals) and paired differences to the baseline on the same backend (bootstrap 95% intervals over problems).
 
 ## Run
