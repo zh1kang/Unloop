@@ -91,6 +91,9 @@ the change in mean log-probability of the actual next token in the loop window (
 The selected weight edit and steering setting have the largest loop-window drop with at most 0.02 nats/token lost on productive text.
 The sweep is a proxy; only generation measures the effect on looping.
 
+**Rank-1 escape edit** (`unloop fit-rank1`, `unloop branch`).
+The proxy above barely moves under the released edit, which works by breaking a loop that has already started, so it cannot find that edit. `fit-rank1` trains the edit directly. On the MLP down-projections of layers 15 and 19, `W <- W + u v^T`: `u` is a unit residual direction, initialized to the difference-of-means direction, and `v` is a gain per neuron, initialized near zero. The loss on each looping fit trace is next-token loss on the productive window and unlikelihood of the repeated tokens for the next 1,024 tokens of the loop, plus the same next-token loss on finished non-looping fit traces. The released weights are not used. `branch` then restarts generation from the 32 validation prefixes in `configs/branch_val.json` (the branch-point pilot's set): 8 samples, 4,096 new tokens, stop at `</think>`. A continuation is looping only when thinking never closes and the tail is a loop. `rank1_top64` keeps the 64 largest gains. Run `fit-rank1` before either condition.
+
 **Explain** (`unloop explain`).
 Logit lens of each direction through the final norm and the unembedding, with the rank and z-score of `</think>`, `<|im_end|>`, and `<think>`.
 Mean log-probability of `</think>` and the share of positions where it is in the top 20 (so top-k sampling can pick it), for the base model and the released edit.
@@ -127,6 +130,14 @@ mkdir -p logs
 sbatch --time=02:00:00 scripts/job.sbatch env SMOKE=1 scripts/run_all.sh   # analyses at full size, then every condition at 2 problems and 256 tokens
 scripts/submit_all.sh configs/full.toml        # one analysis job, then one single-GPU job per condition
 unloop table --run full                        # when the jobs finish
+
+# the rank-1 escape edit (after `unloop directions` has been run)
+sbatch --account=jordanat --partition=gpu --constraint=gpu80 --time=02:00:00 --job-name=unloop-rank1 \
+  scripts/job.sbatch unloop fit-rank1
+sbatch --dependency=afterok:<fit-job> --account=jordanat --partition=gpu --constraint=gpu80 \
+  --time=04:00:00 --job-name=unloop-branch-rank1 scripts/job.sbatch unloop branch --condition rank1
+sbatch --dependency=afterok:<fit-job> --account=jordanat --partition=gpu --constraint=gpu80 \
+  --time=04:00:00 --job-name=unloop-branch-top64 scripts/job.sbatch unloop branch --condition rank1_top64
 ```
 
 `scripts/submit_all.sh` makes the conditions that use an edit or a hook wait for the analysis job.
@@ -181,6 +192,7 @@ src/unloop/
   generate.py    batched sampling (hf), vLLM backend, decoding fixes
   conditions.py  condition specs to edits and hooks
   analysis.py    reproduce, directions, sweep, explain, origin
+  rank1.py       rank-1 escape edit and branch-point restarts
   api.py         hosted-model loop contrast
   cli.py         eval, table, command line
 configs/         full.toml (cluster), pilot.toml (laptop)

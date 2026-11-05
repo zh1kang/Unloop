@@ -301,7 +301,7 @@ def cmd_fetch(args) -> None:
 
 
 def main() -> None:
-    from . import analysis, api
+    from . import analysis, api, rank1
 
     ap = argparse.ArgumentParser(prog="unloop")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -322,6 +322,7 @@ def main() -> None:
     p.add_argument("--run", required=True)
     p.set_defaults(fn=cmd_rescore)
     analysis.add_commands(sub)
+    rank1.add_commands(sub)
     api.add_commands(sub)
     args = ap.parse_args()
     args.fn(args)

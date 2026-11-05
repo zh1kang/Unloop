@@ -65,6 +65,21 @@ def top_writers(act_diff: torch.Tensor, W: torch.Tensor, u: torch.Tensor, k: int
     return sorted(score.topk(min(k, score.numel())).indices.tolist())
 
 
+def keep_topk(v: torch.Tensor, k: int) -> torch.Tensor:
+    """v with every entry outside the k largest magnitudes set to zero."""
+    if k >= v.numel():
+        return v
+    out = torch.zeros_like(v)
+    idx = v.abs().topk(k).indices
+    out[idx] = v[idx]
+    return out
+
+
+def rank1_update(W: torch.Tensor, u: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    """W + u v^T, with u made a unit vector. One new residual direction, with a gain per input neuron."""
+    return (W.double() + torch.outer(unit(u.double()), v.double())).to(W.dtype)
+
+
 def logit_lens(u: torch.Tensor, W_U: torch.Tensor, gain: torch.Tensor) -> torch.Tensor:
     """Logit change per unit of u added before the final norm (ignoring the norm's rescaling)."""
     return W_U.double() @ (gain.double() * unit(u.double()))
