@@ -1,0 +1,131 @@
+{
+ "hold_think": true,
+ "layers": [
+  15,
+  19
+ ],
+ "epochs": 8,
+ "lr_u": 0.01,
+ "lr_v": 0.001,
+ "seed": 0,
+ "context": 512,
+ "break_len": 1024,
+ "max_len": 4096,
+ "n_fit_loop": 64,
+ "n_fit_clean": 14,
+ "n_val_loop": 64,
+ "n_val_clean": 21,
+ "history": [
+  {
+   "keep": 0.56335,
+   "break": 1.33912,
+   "hold": 0.00078,
+   "hold_logp": -17.78143,
+   "clean": 0.29229,
+   "epoch": 0
+  },
+  {
+   "keep": 0.6889,
+   "break": 0.13518,
+   "hold": 0.0,
+   "hold_logp": -24.79919,
+   "clean": 0.25898,
+   "epoch": 1
+  },
+  {
+   "keep": 0.67795,
+   "break": 0.12774,
+   "hold": 0.0,
+   "hold_logp": -27.95231,
+   "clean": 0.2421,
+   "epoch": 2
+  },
+  {
+   "keep": 0.63296,
+   "break": 0.12095,
+   "hold": 0.0,
+   "hold_logp": -29.0161,
+   "clean": 0.21848,
+   "epoch": 3
+  },
+  {
+   "keep": 0.61008,
+   "break": 0.11401,
+   "hold": 0.0,
+   "hold_logp": -29.54624,
+   "clean": 0.19377,
+   "epoch": 4
+  },
+  {
+   "keep": 0.58881,
+   "break": 0.10353,
+   "hold": 0.0,
+   "hold_logp": -30.2361,
+   "clean": 0.1726,
+   "epoch": 5
+  },
+  {
+   "keep": 0.56522,
+   "break": 0.09612,
+   "hold": 0.0,
+   "hold_logp": -30.24291,
+   "clean": 0.15609,
+   "epoch": 6
+  },
+  {
+   "keep": 0.55197,
+   "break": 0.08695,
+   "hold": 0.0,
+   "hold_logp": -30.8632,
+   "clean": 0.14325,
+   "epoch": 7
+  }
+ ],
+ "val_loss_before": {
+  "loop": {
+   "keep": 0.3434,
+   "break": 8.71052,
+   "hold": 0.0,
+   "hold_logp": -30.58187
+  },
+  "clean": {
+   "keep": 0.25449
+  }
+ },
+ "val_loss_after": {
+  "loop": {
+   "keep": 0.56946,
+   "break": 0.15371,
+   "hold": 0.0,
+   "hold_logp": -30.37313
+  },
+  "clean": {
+   "keep": 0.28796
+  }
+ },
+ "geometry": [
+  {
+   "layer": 15,
+   "v_norm": 2.6078,
+   "top64_l1_share": 0.0627,
+   "cos_diffmean": -0.0393,
+   "cos_v_with_existing_write": 0.0101,
+   "cos_released": -0.0018
+  },
+  {
+   "layer": 19,
+   "v_norm": 2.55318,
+   "top64_l1_share": 0.0593,
+   "cos_diffmean": -0.0191,
+   "cos_v_with_existing_write": 0.0294,
+   "cos_released": 0.0645
+  }
+ ],
+ "env": {
+  "torch": "2.14.0+cu130",
+  "transformers": "5.20.2",
+  "python": "3.12.16",
+  "machine": "x86_64",
+  "git": "e2df407ed9f3650bf1a0ba06897aadd63ac3334f"
+ }
+}

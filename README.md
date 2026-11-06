@@ -4,7 +4,7 @@ Qwen3.5-0.8B, asked to think before it answers, often repeats itself until gener
 
 Arditi et al. (2024) showed that refusal is mediated by one direction, and that ablating the direction removes the refusal. Looping is a natural candidate for the same treatment. I ask whether I can recover the published edit with those tools. I also ask whether stopping the loop is what raises the accuracy.
 
-In this study I reproduce the edit, compare it with difference-of-means ablation, activation steering, and decoding fixes, and train my own update on the same two matrices. The published edit raises held-out GSM8K from 12.8% to 68.7% and MATH-500 from 6.8% to 51.2%. My update brings the GSM8K loop rate down to 14.7%, near the published edit's 9.5%, and the accuracy in the table below stays well under the published row.
+In this study I reproduce the edit, compare it with difference-of-means ablation, activation steering, and decoding fixes, and train my own update on the same two matrices. The published edit raises held-out GSM8K from 12.8% to 68.7% and MATH-500 from 6.8% to 51.2%. My update brings the GSM8K loop rate down to 14.7%, near the published edit's 9.5%, and the accuracy in the table below stays well under the published row. Penalizing `</think>` on that stretch keeps the token rare, and the loop returns.
 
 My claims are:
 
@@ -12,6 +12,7 @@ My claims are:
 - A difference-of-means direction separates looping text from the text before it. Deleting it at the two edited layers does nothing. Deleting it from every writer stops the loops. Accuracy stays near the base model.
 - A teacher-forced probe that may lose at most 0.02 nats on ordinary text rejects the published edit.
 - An edit trained to penalize repeated tokens learns a new direction. It ends loops, including from inside a loop, and the published accuracy does not come with it.
+- Penalizing `</think>` on the loop stretch keeps that token at its base rate. From inside a loop the restarts are looping again, and I leave this edit off the full token limit.
 
 ## The edit
 
@@ -98,6 +99,29 @@ From inside the loop, my edit closes almost every restart, and the median close 
 
 On the full token limit the trained row is the one in the table above. Its traces are shorter than the published edit's, and far shorter than the base model's. Paired on the same problems, it trails the published edit by a wide margin on both benchmarks.
 
+## Holding the end of thinking
+
+The loss above counts a repeated token as a failure and any other token as a success. Blocking `</think>` on the loop stretch removes the early close described above.
+
+Unlikelihood of `</think>` pushes back once the token is likely. While it is rare the term has no gradient, and a fit that uses this term alone matches the edit above, cosine 0.999. Giving the log probability an equal share of the update drives it to about −120 and lifts the pre-loop loss to 12. I report the training run that spends 2% of the update on this push (`results/rank1_hold.json`).
+
+On held-out loops the repeat penalty falls as far as in the unpenalized fit, and the pre-loop loss rises about as much. The log probability of `</think>` stays at −30, where the earlier fit had moved it up. This vector leans toward the one from that fit at both layers. The published direction remains nearly orthogonal to the new one.
+
+I restart the same prefixes and stop at `</think>`. The file is `results/branch_rank1_hold.json`. Each cell pools every sample of the validation traces.
+
+| tokens from the loop start | loop | closed | still thinking |
+|---|---|---|---|
+| −2,048 | 69.1 | 10.9 | 19.9 |
+| −1,024 | 76.6 | 14.1 | 9.4 |
+| −512 | 81.3 | 11.3 | 7.4 |
+| −256 | 81.3 | 16.0 | 2.7 |
+| 0 | 87.9 | 9.4 | 2.7 |
+| +256 | 97.3 | 0.8 | 2.0 |
+
+From inside the loop, 97% of restarts are looping when the budget ends, and closing is rare. The median length is the budget. Against the published edit in the restart table further up, closing is common and looping is rare.
+
+On the finished validation problems, regenerated from the prompt, accuracy stays near the unpenalized control and the loop rate is higher. I leave the full token limit alone, because the restarts above are already looping.
+
 ## Where the direction is
 
 I fit the same difference on the same token sequences in the base checkpoint and in the 2B model, instruct and base. The separation is about as large as in the instruct model. Where the hidden width matches, the cosine with the instruct direction is 0.95. The larger model has a different width. That cosine is not defined there.
@@ -106,7 +130,9 @@ The base checkpoint has no chat template, and I do not measure how often it loop
 
 ## Reading
 
-The published edit is a real, small change, and a next-token screen with a tight budget on ordinary text will not propose it. Ablating the loop direction at the edited layers does nothing. Ablating it everywhere, and training a different write to punish repeated tokens, both end the loops and miss the accuracy. A thinking budget, which does not touch the weights, scores higher than my edit and leaves the traces looping.
+The published edit is a real, small change, and a next-token screen with a tight budget on ordinary text will not propose it. Ablating the loop direction at the edited layers does nothing. Ablating it everywhere, and training a different write to punish repeated tokens, both end the loops and miss the accuracy.
+
+Penalizing `</think>` on the loop stretch removes the early close. From inside a loop those restarts are looping again. A thinking budget, which does not touch the weights, scores higher than my edit and leaves the traces looping.
 
 Ending the repetition and scoring on these two benchmarks come apart. They come apart for more than one intervention (a full-writer ablation, a trained write, a thinking budget). I do not have a simpler edit that reproduces the published gain.
 
@@ -114,7 +140,7 @@ Ending the repetition and scoring on these two benchmarks come apart. They come 
 
 Held-out problems keep the fit traces out of the eval. My table is not the blog's full-benchmark table. The blog's GSM8K and MATH gains agree with my base and published rows to within a few points.
 
-Fit traces are looping traces whose windows fit in the analysis context, which can weight the direction toward earlier loops. The two windows also sit a few hundred tokens apart, and a position effect may enter the difference. vLLM applies a thinking budget as a second pass, and the presence penalty does not see the tokens from before the forced `</think>`. I compare hook and bias rows with `base_hf`. The trained edit restricted to its largest gains was measured on the branch restarts, not at the full token limit.
+Fit traces are looping traces whose windows fit in the analysis context, which can weight the direction toward earlier loops. The two windows also sit a few hundred tokens apart, and a position effect may enter the difference. vLLM applies a thinking budget as a second pass, and the presence penalty does not see the tokens from before the forced `</think>`. I compare hook and bias rows with `base_hf`. The trained edit restricted to its largest gains, and the edit that penalizes `</think>`, were measured on the branch restarts rather than at the full token limit.
 
 ## Run
 
@@ -136,7 +162,7 @@ export SBATCH_ARGS="--account=jordanat --constraint=gpu80"
 scripts/submit_all.sh configs/full.toml
 ```
 
-`scripts/submit_all.sh` runs the analysis and then one GPU job per condition. Rank-1 conditions are skipped until `unloop fit-rank1` has written `rank1.u` and `rank1.v` into `results/directions.safetensors`.
+`scripts/submit_all.sh` runs the analysis and then one GPU job per condition. A rank-1 condition is skipped until its `.u` vector is in `results/directions.safetensors`. `unloop fit-rank1` writes `rank1`, and `unloop fit-rank1 --hold-think` writes `rank1_hold`.
 
 ```bash
 sbatch --account=jordanat --constraint=gpu80 --time=02:00:00 --job-name=unloop-rank1 \
@@ -144,6 +170,10 @@ sbatch --account=jordanat --constraint=gpu80 --time=02:00:00 --job-name=unloop-r
 sbatch --dependency=afterok:JOB --account=jordanat --constraint=gpu80 --time=16:00:00 \
   --job-name=unloop-rank1-eval \
   scripts/job.sbatch unloop eval --config configs/full.toml --condition rank1
+sbatch --account=jordanat --constraint=gpu80 --time=01:00:00 --job-name=unloop-rank1-hold \
+  scripts/job.sbatch unloop fit-rank1 --hold-think
+sbatch --account=jordanat --constraint=gpu80 --time=08:00:00 --job-name=unloop-branch-hold \
+  scripts/job.sbatch unloop branch --condition rank1_hold --config configs/full.toml
 ```
 
 One vLLM condition is on the order of 50 to 100 million tokens, about one to two hours on an H200 and longer on an A100. The Hugging Face conditions are much slower. `configs/pilot.toml` is the same comparison at a few dozen problems, one sample, and a short token limit, for a laptop run on the Hugging Face backend.
