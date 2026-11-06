@@ -1,10 +1,21 @@
-# unloop: the halting direction
+# Unloop
 
-Qwen3.5-0.8B, asked to think before it answers, often repeats itself until generation hits the token limit. A published weight edit removes most of these loops and raises accuracy on grade-school and competition math. The edit was produced by a frontier model. The public record is the edited checkpoint and a short formula ([Experiment 8](https://rikiyat.github.io/blog/weight-space-programming/)).
+Reproducibility study for **Qwen3.5-0.8B** thinking loops and the rank-1 weight edit from [Experiment 8](https://rikiyat.github.io/blog/weight-space-programming/) (RikiyaT). The model often repeats itself until it hits the token limit. The published checkpoint changes two MLP matrices and raises grade-school and competition math accuracy. I reproduce that edit, test simpler interventions, and train my own rank-1 update on the same weights.
 
-Arditi et al. (2024) showed that refusal is mediated by one direction, and that ablating the direction removes the refusal. Looping is a natural candidate for the same treatment. I ask whether I can recover the published edit with those tools. I also ask whether stopping the loop is what raises the accuracy.
+## Results
 
-In this study I reproduce the edit, compare it with difference-of-means ablation, activation steering, and decoding fixes, and train my own update on the same two matrices. The published edit raises held-out GSM8K from 12.8% to 68.7% and MATH-500 from 6.8% to 51.2%. My update brings the GSM8K loop rate down to 14.7%, near the published edit's 9.5%, and the accuracy in the table below stays well under the published row. Penalizing `</think>` on that stretch keeps the token rare, and the loop returns.
+Held-out **GSM8K** and **MATH-500** generations use the blog sampler, thinking on, out to 32,768 tokens, with fit traces excluded from eval. **3,438** scored solutions in the full run.
+
+| condition | GSM8K acc | GSM8K loop | MATH acc | MATH loop |
+|---|---:|---:|---:|---:|
+| Base | 12.8 | 88.5 | 6.8 | 90.9 |
+| My rank-1 edit | 38.6 | 14.7 | 16.4 | 39.3 |
+| Thinking budget 8k | 56.8 | 53.8 | 32.8 | 66.3 |
+| **Published edit** | **68.7** | **9.5** | **51.2** | **26.7** |
+
+Rates are percent of generations. The [full table](#held-out-generation) adds ablations, steering, logit bias, and Hugging Face baselines. From inside a loop, the published edit closes about half of restarts at +256 tokens from onset; my rank-1 edit closes about 90% in a median of 14 new tokens by ending thinking early. Penalizing `</think>` on the loop stretch removes that shortcut and the restarts loop again.
+
+Arditi et al. (2024) showed that refusal is mediated by one direction, and that ablating the direction removes the refusal. Looping is a natural candidate for the same treatment. I ask whether I can recover the published edit with those tools and whether stopping the loop is what raises the accuracy.
 
 My claims are:
 
@@ -44,7 +55,7 @@ This probe can miss an edit that acts once a loop is already going. I use it as 
 
 ## Held-out generation
 
-Bold marks the published edit. Rates are percentages of generations. A cut generation hit the token limit. The first nine rows are vLLM and share the base row. The last four use the Hugging Face decoder, because they need a hook or a per-step logit bias, and their baseline is `base_hf`. Paired bootstrap intervals over problems are in `results/full/table.json`. For these rates the intervals run about two points wide.
+The summary table at the top lists the base model, my rank-1 fit, a thinking budget, and the published edit. Bold marks the published edit below. Rates are percentages of generations. A cut generation hit the token limit. The first nine rows are vLLM; the last four use Hugging Face for hooks or logit bias. Bootstrap intervals are in `results/full/table.json`.
 
 | condition | key | GSM8K acc | GSM8K loop | GSM8K cut | MATH acc | MATH loop | MATH cut |
 |---|---|---|---|---|---|---|---|
